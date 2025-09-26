@@ -1,4 +1,5 @@
 local is_windows = require('utils').is_windows
+local is_vscode = require('utils').is_vscode
 
 require('core')
 
@@ -17,5 +18,8 @@ if is_windows() then
   end
 end
 
-require('plugins/lazy')
+if is_vscode() then
+  require('core/vscode-keymaps')
+end
 
+require('plugins/lazy')
