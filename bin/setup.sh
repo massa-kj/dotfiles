@@ -28,6 +28,7 @@ run_install() {
   case "$target" in
     all)
       "$SCRIPT_DIR/modules/shell.sh"
+      . ~/.bashrc
       "$SCRIPT_DIR/modules/git.sh"
       "$SCRIPT_DIR/modules/brew.sh"
       "$SCRIPT_DIR/modules/mise.sh"
@@ -47,6 +48,7 @@ run_install() {
       ;;
     nvim)
       "$SCRIPT_DIR/modules/shell.sh"
+      . ~/.bashrc
       "$SCRIPT_DIR/modules/brew.sh"
       "$SCRIPT_DIR/modules/mise.sh"
       "$SCRIPT_DIR/modules/nvim.sh"
