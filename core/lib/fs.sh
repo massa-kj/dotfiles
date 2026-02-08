@@ -1,0 +1,81 @@
+#!/usr/bin/env bash
+# File system helpers
+
+# This library expects core/lib/logger.sh and core/lib/state.sh to be sourced by the caller.
+
+ensure_dir() {
+    local path="$1"
+
+    if [[ -z "$path" ]]; then
+        log_error "ensure_dir: path is required"
+        return 1
+    fi
+
+    if [[ ! -d "$path" ]]; then
+        mkdir -p "$path"
+    fi
+}
+
+backup_file() {
+    local target="$1"
+
+    if [[ -z "$target" ]]; then
+        log_error "backup_file: target is required"
+        return 1
+    fi
+
+    if [[ -f "$target" ]] && [[ ! -L "$target" ]]; then
+        local backup_path="${target}.backup"
+        if [[ -e "$backup_path" ]]; then
+            backup_path="${target}.backup.$(date +%Y%m%d%H%M%S)"
+        fi
+        log_warn "Backing up existing $target to $backup_path"
+        mv "$target" "$backup_path"
+    fi
+}
+
+link_file() {
+    local feature="$1"
+    local src="$2"
+    local dst="$3"
+
+    if [[ -z "$feature" ]] || [[ -z "$src" ]] || [[ -z "$dst" ]]; then
+        log_error "link_file: feature, src, and dst are required"
+        return 1
+    fi
+
+    if [[ ! -f "$src" ]]; then
+        log_error "link_file: source file not found: $src"
+        return 1
+    fi
+
+    ensure_dir "$(dirname "$dst")"
+    backup_file "$dst"
+
+    ln -sf "$src" "$dst"
+    state_add_file "$feature" "$dst"
+    log_success "Linked $dst"
+}
+
+remove_tracked_files() {
+    local feature="$1"
+
+    if [[ -z "$feature" ]]; then
+        log_error "remove_tracked_files: feature is required"
+        return 1
+    fi
+
+    log_info "Removing configuration files..."
+    while IFS= read -r file; do
+        if [[ -n "$file" ]]; then
+            if [[ -L "$file" ]]; then
+                log_info "Removing symlink: $file"
+                rm -f "$file"
+            elif [[ -f "$file" ]]; then
+                log_warn "File is not a symlink, skipping: $file"
+            else
+                log_info "File does not exist, skipping: $file"
+            fi
+        fi
+    done < <(state_get_files "$feature")
+}
