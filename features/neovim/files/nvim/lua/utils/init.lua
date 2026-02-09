@@ -15,7 +15,7 @@ function M.is_wsl()
 end
 
 function M.get_browser_path()
-  if M.is_windows then
+  if M.is_windows() then
     return vim.fn.expand('~/windows/scoop/apps/googlechrome/current/chrome.exe')
   elseif M.is_wsl() then
     return vim.fn.expand('~/scoop/apps/googlechrome/current/chrome.exe')

@@ -31,7 +31,7 @@ fi
 state_add_package "$FEATURE_NAME" "neovim"
 
 # Deploy configuration files
-FEATURE_FILES_DIR="$SCRIPT_DIR/files"
+FEATURE_FILES_DIR="$SCRIPT_DIR/files/nvim"
 TARGET_NVIM_DIR="$HOME/.config/nvim"
 
 if [[ -d "$FEATURE_FILES_DIR" ]]; then
