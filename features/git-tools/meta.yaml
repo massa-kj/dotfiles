@@ -1,0 +1,5 @@
+# features/git-tools/meta.yaml
+# Git tools feature metadata
+
+depends:
+  - brew

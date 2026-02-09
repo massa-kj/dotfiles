@@ -3,5 +3,6 @@ features:
   - brew
   - cli-tools
   - git
+  - git-tools
   - neovim
   - tmux

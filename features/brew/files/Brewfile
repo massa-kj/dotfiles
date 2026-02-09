@@ -1,4 +1,2 @@
-brew "git-delta"
-brew "lazygit"
 brew "luacheck"
 brew "mise"
