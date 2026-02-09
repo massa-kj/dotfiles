@@ -26,9 +26,9 @@ if has_command "tmux"; then
 else
     log_info "Installing tmux package..."
     install_package "tmux"
-    state_add_package "$FEATURE_NAME" "tmux"
     log_success "tmux package installed"
 fi
+state_add_package "$FEATURE_NAME" "tmux"
 
 # Deploy configuration files
 FEATURE_FILES_DIR="$SCRIPT_DIR/files"

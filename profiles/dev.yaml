@@ -4,5 +4,6 @@ features:
   - cli-tools
   - git
   - git-tools
+  - mise
   - neovim
   - tmux

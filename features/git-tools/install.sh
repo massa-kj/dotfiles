@@ -32,9 +32,9 @@ for tool in "${TOOLS[@]}"; do
     else
         log_info "Installing $tool..."
         install_package "$tool"
-        state_add_package "$FEATURE_NAME" "$tool"
         log_success "$tool installed"
     fi
+    state_add_package "$FEATURE_NAME" "$tool"
 done
 
 log_success "Feature $FEATURE_NAME installed successfully"

@@ -1,0 +1,5 @@
+# features/mise/meta.yaml
+# Mise (version manager) feature metadata
+
+depends:
+  - brew
