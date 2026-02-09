@@ -30,15 +30,15 @@ for pkg in "${packages[@]}"; do
 
     if [[ "$pkg" == "npm:"* ]]; then
         # npm package
-        local npm_pkg="${pkg#npm:}"
+        npm_pkg="${pkg#npm:}"
         if npm list -g "$npm_pkg" >/dev/null 2>&1; then
             log_info "Removing npm package: $npm_pkg"
             npm uninstall -g "$npm_pkg"
         fi
     elif [[ "$pkg" == *"@"* ]]; then
         # Runtime package (node@version)
-        local name="${pkg%%@*}"
-        local version="${pkg##*@}"
+        name="${pkg%%@*}"
+        version="${pkg##*@}"
         
         if has_runtime "$name" "$version"; then
             log_info "Removing runtime: $name@$version"

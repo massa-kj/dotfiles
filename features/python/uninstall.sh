@@ -37,8 +37,8 @@ for pkg in "${packages[@]}"; do
         fi
     elif [[ "$pkg" == *"@"* ]]; then
         # Runtime package (python@version or uv@version)
-        local name="${pkg%%@*}"
-        local version="${pkg##*@}"
+        name="${pkg%%@*}"
+        version="${pkg##*@}"
         
         if has_runtime "$name" "$version"; then
             log_info "Removing runtime: $name@$version"

@@ -31,8 +31,8 @@ for pkg in "${packages[@]}"; do
     # Check if it's a runtime or regular package
     if [[ "$pkg" == *"@"* ]]; then
         # Runtime package (e.g., stylua@2.1.0)
-        local name="${pkg%%@*}"
-        local version="${pkg##*@}"
+        name="${pkg%%@*}"
+        version="${pkg##*@}"
         
         if has_runtime "$name" "$version"; then
             log_info "Removing runtime: $name@$version"
