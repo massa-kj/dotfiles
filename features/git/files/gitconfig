@@ -5,10 +5,13 @@
 	editor = nvim
 	pager = delta
 	quotepath = false
+
 [fetch]
 	prune = true
+
 [diff]
 	compactionHeuristic = true
+
 [alias]
 	a = add
 	b = branch

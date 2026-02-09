@@ -10,6 +10,7 @@ source "$DOTFILES_ROOT/core/env.sh"
 source "$DOTFILES_ROOT/core/lib/logger.sh"
 source "$DOTFILES_ROOT/core/lib/state.sh"
 source "$DOTFILES_ROOT/core/lib/package.sh"
+source "$DOTFILES_ROOT/core/lib/fs.sh"
 source "$DOTFILES_ROOT/core/lib/runner.sh"
 
 FEATURE_NAME="git-tools"
@@ -36,5 +37,12 @@ for tool in "${TOOLS[@]}"; do
     fi
     state_add_package "$FEATURE_NAME" "$tool"
 done
+
+# Deploy lazygit configuration
+FEATURE_FILES_DIR="$SCRIPT_DIR/files"
+if [[ -d "$FEATURE_FILES_DIR/lazygit" ]]; then
+    log_info "Deploying lazygit configuration..."
+    link_dir "$FEATURE_NAME" "$FEATURE_FILES_DIR/lazygit" "$HOME/.config/lazygit"
+fi
 
 log_success "Feature $FEATURE_NAME installed successfully"
