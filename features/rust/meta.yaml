@@ -1,0 +1,4 @@
+name: rust
+description: Rust toolchain with rust-analyzer language server
+depends:
+  - mise
