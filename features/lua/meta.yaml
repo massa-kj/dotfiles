@@ -1,0 +1,5 @@
+name: lua
+description: Lua development environment with formatters and language servers
+depends:
+  - brew
+  - mise
