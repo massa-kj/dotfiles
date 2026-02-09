@@ -1,0 +1,5 @@
+# features/neovim/meta.yaml
+# Neovim feature metadata
+
+depends:
+  - git

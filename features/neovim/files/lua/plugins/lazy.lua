@@ -71,7 +71,7 @@ local plugins = {
   require('plugins/ui/indent-blankline'),
   require('plugins/ui/lualine'),
   require('plugins/ui/markdown-preview'),
-  require('plugins/ui/render-markdown'),
+  -- require('plugins/ui/render-markdown'),
   require('plugins/ui/dressing'),
   require('plugins/ui/winsep'),
 
