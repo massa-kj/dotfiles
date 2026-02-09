@@ -34,6 +34,21 @@ backup_file() {
     fi
 }
 
+backup_dir() {
+    local target="$1"
+
+    if [[ -z "$target" ]]; then
+        log_error "backup_dir: target is required"
+        return 1
+    fi
+
+    if [[ -d "$target" ]] && [[ ! -L "$target" ]]; then
+        local backup_path="${target}.backup.$(date +%Y%m%d%H%M%S)"
+        log_warn "Backing up existing directory $target to $backup_path"
+        mv "$target" "$backup_path"
+    fi
+}
+
 link_file() {
     local feature="$1"
     local src="$2"
@@ -57,6 +72,34 @@ link_file() {
     log_success "Linked $dst"
 }
 
+link_dir() {
+    local feature="$1"
+    local src="$2"
+    local dst="$3"
+
+    if [[ -z "$feature" ]] || [[ -z "$src" ]] || [[ -z "$dst" ]]; then
+        log_error "link_dir: feature, src, and dst are required"
+        return 1
+    fi
+
+    if [[ ! -d "$src" ]]; then
+        log_error "link_dir: source directory not found: $src"
+        return 1
+    fi
+
+    ensure_dir "$(dirname "$dst")"
+    backup_dir "$dst"
+
+    # Remove if it's a symlink to a different location
+    if [[ -L "$dst" ]]; then
+        rm -f "$dst"
+    fi
+
+    ln -sf "$src" "$dst"
+    state_add_file "$feature" "$dst"
+    log_success "Linked $dst"
+}
+
 remove_tracked_files() {
     local feature="$1"
 
@@ -71,10 +114,10 @@ remove_tracked_files() {
             if [[ -L "$file" ]]; then
                 log_info "Removing symlink: $file"
                 rm -f "$file"
-            elif [[ -f "$file" ]]; then
-                log_warn "File is not a symlink, skipping: $file"
+            elif [[ -f "$file" ]] || [[ -d "$file" ]]; then
+                log_warn "Path is not a symlink, skipping: $file"
             else
-                log_info "File does not exist, skipping: $file"
+                log_info "Path does not exist, skipping: $file"
             fi
         fi
     done < <(state_get_files "$feature")
