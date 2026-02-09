@@ -1,0 +1,4 @@
+# features/brew/meta.yaml
+# Homebrew feature metadata
+
+depends: []

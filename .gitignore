@@ -2,4 +2,3 @@ editor/nvim/lazy-lock.json
 git/lazygit/state.yml
 tmp/*
 !tmp/.gitkeep
-

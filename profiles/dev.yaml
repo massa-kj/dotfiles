@@ -1,4 +1,6 @@
 features:
   - bash
+  - brew
+  - git
   - neovim
   - tmux
