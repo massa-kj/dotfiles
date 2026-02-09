@@ -1,0 +1,4 @@
+name: node
+description: Node.js runtime with TypeScript and ESLint tooling
+depends:
+  - mise

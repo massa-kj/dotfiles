@@ -9,3 +9,4 @@ features:
   - tmux
   
   - lua
+  - node
