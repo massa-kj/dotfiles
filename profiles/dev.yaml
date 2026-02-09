@@ -1,0 +1,4 @@
+features:
+  - bash
+  - neovim
+  - tmux
