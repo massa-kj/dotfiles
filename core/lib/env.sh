@@ -2,8 +2,8 @@
 # Environment variable definitions
 
 # Root directory of dotfiles
-# Assumes this script is located at core/env.sh
-DOTFILES_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# Assumes this script is located at core/lib/env.sh
+DOTFILES_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 export DOTFILES_ROOT
 
 # Platform detection

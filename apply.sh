@@ -8,7 +8,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DOTFILES_ROOT="$SCRIPT_DIR"
 
-source "$DOTFILES_ROOT/core/env.sh"
+source "$DOTFILES_ROOT/core/lib/env.sh"
 source "$DOTFILES_ROOT/core/lib/logger.sh"
 source "$DOTFILES_ROOT/core/lib/state.sh"
 source "$DOTFILES_ROOT/core/lib/resolver.sh"
