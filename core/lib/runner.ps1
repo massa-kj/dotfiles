@@ -135,6 +135,3 @@ function Get-UserConfirmation {
     
     return $response -match '^[Yy]'
 }
-
-# Export functions
-Export-ModuleMember -Function Test-Command, Assert-Command, Invoke-OrDie, Test-Administrator, Assert-Administrator, Invoke-WithRetry, Get-UserConfirmation

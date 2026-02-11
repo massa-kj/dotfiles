@@ -42,8 +42,11 @@ Write-Info "DOTFILES_ROOT: $DotfilesRoot"
 Write-Info "Platform: Windows"
 
 # Check if running on Windows
-if ($PSVersionTable.Platform -and $PSVersionTable.Platform -ne "Win32NT") {
-    Write-Warn "Not running on Windows, but continuing..."
+# Note: Platform property only exists in PowerShell Core (6+)
+if ($PSVersionTable.PSObject.Properties.Name -contains "Platform") {
+    if ($PSVersionTable.Platform -ne "Win32NT") {
+        Write-Warn "Not running on Windows, but continuing..."
+    }
 }
 
 # Check administrator privileges
@@ -71,7 +74,7 @@ Write-Step "Installing required dependencies..."
 if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
     Write-Info "Installing git..."
     try {
-        winget install --id Git.Git --exact --silent --accept-package-agreements --accept-source-agreements
+        winget install --id Git.Git --exact --silent --source winget --accept-package-agreements --accept-source-agreements
         # Refresh environment variables
         $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
         Write-Info "git installed successfully"
@@ -88,7 +91,7 @@ if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
 if (-not (Get-Command jq -ErrorAction SilentlyContinue)) {
     Write-Info "Installing jq..."
     try {
-        winget install --id jqlang.jq --exact --silent --accept-package-agreements --accept-source-agreements
+        winget install --id jqlang.jq --exact --silent --source winget --accept-package-agreements --accept-source-agreements
         # Refresh environment variables
         $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
         Write-Info "jq installed successfully"
@@ -105,7 +108,7 @@ if (-not (Get-Command jq -ErrorAction SilentlyContinue)) {
 if (-not (Get-Command yq -ErrorAction SilentlyContinue)) {
     Write-Info "Installing yq..."
     try {
-        winget install --id MikeFarah.yq --exact --silent --accept-package-agreements --accept-source-agreements
+        winget install --id MikeFarah.yq --exact --silent --source winget --accept-package-agreements --accept-source-agreements
         # Refresh environment variables
         $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
         Write-Info "yq installed successfully"

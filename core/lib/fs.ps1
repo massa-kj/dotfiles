@@ -258,6 +258,3 @@ function Expand-HomeVariables {
     
     return $Path
 }
-
-# Export functions
-Export-ModuleMember -Function Ensure-Directory, Backup-File, Backup-Directory, New-FileLink, New-DirectoryLink, Copy-ConfigFile, Remove-TrackedFiles, Get-HomePath, Get-ConfigPath, Expand-HomeVariables

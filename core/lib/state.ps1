@@ -209,6 +209,3 @@ function State-ListFeatures {
     $state = Get-Content -Path $global:DOTFILES_STATE_FILE -Raw | ConvertFrom-Json
     return $state.features.PSObject.Properties.Name
 }
-
-# Export functions
-Export-ModuleMember -Function State-Init, State-HasFeature, State-AddPackage, State-AddFile, State-GetPackages, State-GetFiles, State-RemoveFeature, State-ListFeatures

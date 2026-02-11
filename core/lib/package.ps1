@@ -270,6 +270,3 @@ function Uninstall-Runtime {
         return $false
     }
 }
-
-# Export functions
-Export-ModuleMember -Function Get-PackageManager, Test-Package, Install-Package, Uninstall-Package, Test-Runtime, Install-Runtime, Uninstall-Runtime

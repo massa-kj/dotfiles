@@ -22,9 +22,9 @@ function Write-ColorLog {
     )
     
     if ($script:SupportsColor) {
-        Write-Error "${Color}[${Level}] ${Message}${script:COLOR_RESET}"
+        Write-Host "${Color}[${Level}] ${Message}${script:COLOR_RESET}"
     } else {
-        Write-Error "[${Level}] ${Message}"
+        Write-Host "[${Level}] ${Message}"
     }
 }
 
@@ -57,11 +57,8 @@ function Log-Task {
     param([string]$Message)
     
     if ($script:SupportsColor) {
-        Write-Error "${script:COLOR_GREEN}==>${script:COLOR_RESET} ${Message}"
+        Write-Host "${script:COLOR_GREEN}==>${script:COLOR_RESET} ${Message}"
     } else {
-        Write-Error "==> ${Message}"
+        Write-Host "==> ${Message}"
     }
 }
-
-# Export functions
-Export-ModuleMember -Function Log-Debug, Log-Info, Log-Success, Log-Warn, Log-Error, Log-Task

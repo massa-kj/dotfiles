@@ -121,7 +121,7 @@ function Invoke-Uninstall {
     [array]::Reverse($Features)
     
     foreach ($feature in $Features) {
-        $uninstallScript = Join-Path $global:DOTFILES_FEATURES_DIR $feature "uninstall.ps1"
+        $uninstallScript = Join-Path (Join-Path $global:DOTFILES_FEATURES_DIR $feature) "uninstall.ps1"
         
         if (-not (Test-Path $uninstallScript)) {
             Log-Error "Uninstall script not found: $uninstallScript"
@@ -161,7 +161,7 @@ function Invoke-Install {
     Log-Task "Installing features..."
     
     foreach ($feature in $Features) {
-        $installScript = Join-Path $global:DOTFILES_FEATURES_DIR $feature "install.ps1"
+        $installScript = Join-Path (Join-Path $global:DOTFILES_FEATURES_DIR $feature) "install.ps1"
         
         if (-not (Test-Path $installScript)) {
             Log-Error "Install script not found: $installScript"
@@ -201,6 +201,3 @@ function Show-Summary {
     
     Write-Host ""
 }
-
-# Export functions
-Export-ModuleMember -Function Read-Profile, Get-FeatureDiff, Invoke-Uninstall, Invoke-Install, Show-Summary

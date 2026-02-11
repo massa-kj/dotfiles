@@ -26,8 +26,8 @@ function Read-FeatureMetadata {
     Log-Info "Reading feature metadata..."
     
     foreach ($feature in $Features) {
-        $metaFile = Join-Path $global:DOTFILES_FEATURES_DIR $feature "meta.yaml"
-        $platformMetaFile = Join-Path $global:DOTFILES_FEATURES_DIR $feature "meta.$($global:DOTFILES_PLATFORM).yaml"
+        $metaFile = Join-Path (Join-Path $global:DOTFILES_FEATURES_DIR $feature) "meta.yaml"
+        $platformMetaFile = Join-Path (Join-Path $global:DOTFILES_FEATURES_DIR $feature) "meta.$($global:DOTFILES_PLATFORM).yaml"
         
         if (-not (Test-Path $metaFile)) {
             Log-Error "Meta file not found: $metaFile"
@@ -170,6 +170,3 @@ function Resolve-Dependencies {
     Log-Success "Install order: $($script:Sorted -join ' ')"
     return $script:Sorted
 }
-
-# Export functions
-Export-ModuleMember -Function Read-FeatureMetadata, Resolve-Dependencies
