@@ -1,0 +1,5 @@
+# features/caps2ctrl/meta.yaml
+# Caps Lock to Ctrl remapping feature metadata
+
+# Windows-only feature
+depends: []

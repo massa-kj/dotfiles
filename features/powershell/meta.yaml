@@ -1,0 +1,5 @@
+# features/powershell/meta.yaml
+# PowerShell configuration feature metadata
+
+# Windows-only feature
+depends: []

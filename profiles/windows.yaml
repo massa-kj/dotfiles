@@ -1,0 +1,14 @@
+features:
+  - caps2ctrl
+  - cli-tools
+  - git
+  - git-tools
+  - mise
+  - neovim
+  - powershell
+  - scoop
+  
+  - lua
+  - node
+  - python
+  - rust

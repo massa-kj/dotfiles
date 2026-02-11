@@ -6,6 +6,11 @@ Set-Alias lg lazygit
 # The operating system type for dotfiles configuration scripts
 $env:DOTFILES_OS_TYPE = "windows"
 
+# Initialize mise (version manager)
+if (Get-Command mise -ErrorAction SilentlyContinue) {
+    Invoke-Expression (& { (mise activate powershell | Out-String) })
+}
+
 function repo {
     $selection = ghq list -p | fzf
     if ([string]::IsNullOrWhiteSpace($selection)) {

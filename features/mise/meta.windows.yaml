@@ -1,0 +1,6 @@
+# features/mise/meta.windows.yaml
+# Windows-specific dependencies
+
+depends:
+  - scoop
+  - powershell

@@ -1,5 +1,6 @@
 # features/neovim/meta.yaml
 # Neovim feature metadata
 
+# Common dependencies (all platforms)
 depends:
-  - brew
+  - git

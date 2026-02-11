@@ -1,5 +1,5 @@
 # features/cli-tools/meta.yaml
 # CLI tools feature metadata
 
-depends:
-  - brew
+# Common dependencies (all platforms)
+depends: []

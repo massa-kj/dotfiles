@@ -1,5 +1,5 @@
 # features/tmux/meta.yaml
 # Tmux feature metadata
 
-depends:
-  - brew
+# Common dependencies (all platforms)
+depends: []

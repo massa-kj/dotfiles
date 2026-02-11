@@ -1,0 +1,5 @@
+# features/neovim/meta.windows.yaml
+# Windows-specific dependencies
+
+depends:
+  - scoop
