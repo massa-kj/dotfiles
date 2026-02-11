@@ -1,4 +1,7 @@
-editor/nvim/lazy-lock.json
-git/lazygit/state.yml
+state/
+.env.bootstrap
 tmp/*
 !tmp/.gitkeep
+
+editor/nvim/lazy-lock.json
+git/lazygit/state.yml
