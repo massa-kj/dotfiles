@@ -18,18 +18,28 @@ read_feature_metadata() {
     log_info "Reading feature metadata..."
     for feature in "${features[@]}"; do
         local meta_file="$DOTFILES_FEATURES_DIR/$feature/meta.yaml"
+        local platform_meta_file="$DOTFILES_FEATURES_DIR/$feature/meta.${DOTFILES_PLATFORM}.yaml"
         
         if [[ ! -f "$meta_file" ]]; then
             log_error "Meta file not found: $meta_file"
             return 1
         fi
         
-        # Read dependencies (empty if none)
+        # Read common dependencies
         local deps=($(yq eval '.depends[]' "$meta_file" 2>/dev/null || true))
-        _RESOLVER_FEATURE_DEPS["$feature"]="${deps[*]}"
         
-        if [[ ${#deps[@]} -gt 0 ]]; then
-            log_info "  $feature depends on: ${deps[*]}"
+        # Read platform-specific dependencies if exists
+        if [[ -f "$platform_meta_file" ]]; then
+            local platform_deps=($(yq eval '.depends[]' "$platform_meta_file" 2>/dev/null || true))
+            deps+=("${platform_deps[@]}")
+        fi
+        
+        # Store unique dependencies
+        local unique_deps=($(printf '%s\n' "${deps[@]}" | sort -u))
+        _RESOLVER_FEATURE_DEPS["$feature"]="${unique_deps[*]}"
+        
+        if [[ ${#unique_deps[@]} -gt 0 ]]; then
+            log_info "  $feature depends on: ${unique_deps[*]}"
         else
             log_info "  $feature has no dependencies"
         fi
