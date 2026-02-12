@@ -1,0 +1,5 @@
+# features/vcredist/meta.yaml
+# Visual C++ Redistributable feature metadata
+
+# Common dependencies (all platforms)
+depends: []

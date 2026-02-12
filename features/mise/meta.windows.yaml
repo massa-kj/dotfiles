@@ -4,3 +4,4 @@
 depends:
   - scoop
   - powershell
+  - vcredist

@@ -7,8 +7,10 @@ features:
   - neovim
   - powershell
   - scoop
+  - vcredist
+  # - vscode
   
-  - lua
-  - node
-  - python
-  - rust
+  # - lua
+  # - node
+  # - python
+  # - rust

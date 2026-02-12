@@ -3,3 +3,4 @@
 
 depends:
   - scoop
+  - vcredist
