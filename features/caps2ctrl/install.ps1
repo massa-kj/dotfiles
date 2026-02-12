@@ -76,7 +76,7 @@ if ($currentValue -and $currentValue.$registryName) {
 # Apply registry settings
 Log-Info "Applying Caps Lock to Ctrl mapping..."
 
-$regFilePath = Join-Path $ScriptDir "files" "Caps2Ctrl.reg"
+$regFilePath = Join-Path (Join-Path $ScriptDir "files") "Caps2Ctrl.reg"
 
 if (-not (Test-Path $regFilePath)) {
     Log-Error "Registry file not found: $regFilePath"
@@ -86,7 +86,7 @@ if (-not (Test-Path $regFilePath)) {
 try {
     # Import registry file
     Log-Info "Importing registry settings..."
-    $process = Start-Process -FilePath "regedit.exe" -ArgumentList "/s", "`"$regFilePath`"" -PassThru -Wait
+    $process = Start-Process -FilePath "regedit.exe" -ArgumentList @("/s", $regFilePath) -PassThru -Wait
     
     if ($process.ExitCode -ne 0) {
         throw "regedit failed with exit code $($process.ExitCode)"

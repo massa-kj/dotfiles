@@ -82,9 +82,9 @@ function Get-FeatureDiff {
     }
     
     # Find features to uninstall
-    foreach ($feature in $installedFeatures) {
-        if ($feature -notin $SortedFeatures) {
-            $toUninstall += $feature
+    foreach ($installed in $installedFeatures) {
+        if ($installed -notin $SortedFeatures) {
+            $toUninstall += $installed
         }
     }
     

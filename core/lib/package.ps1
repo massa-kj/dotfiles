@@ -42,8 +42,8 @@ function Test-Package {
     
     switch ($Manager) {
         "scoop" {
-            $installed = & scoop list $Name 2>$null
-            return $LASTEXITCODE -eq 0 -and $installed
+            $output = & scoop list 2>&1 | Out-String
+            return $output -match [regex]::Escape($Name)
         }
         # "winget" {
         #     $result = & winget list --id $Name --exact 2>$null
@@ -84,11 +84,11 @@ function Install-Package {
             "scoop" {
                 if ($Bucket) {
                     Log-Info "Adding bucket: $Bucket"
-                    & scoop bucket add $Bucket 2>&1 | Out-Null
+                    & scoop bucket add $Bucket 2>&1 | ForEach-Object { Write-Host $_ }
                 }
-                & scoop install $Name
+                & scoop install $Name 2>&1 | ForEach-Object { Write-Host $_ }
                 if ($LASTEXITCODE -ne 0) {
-                    throw "scoop install failed"
+                    throw "scoop install failed with exit code $LASTEXITCODE"
                 }
             }
             "winget" {
@@ -135,9 +135,9 @@ function Uninstall-Package {
     try {
         switch ($Manager) {
             "scoop" {
-                & scoop uninstall $Name
+                & scoop uninstall $Name 2>&1 | ForEach-Object { Write-Host $_ }
                 if ($LASTEXITCODE -ne 0) {
-                    throw "scoop uninstall failed"
+                    throw "scoop uninstall failed with exit code $LASTEXITCODE"
                 }
             }
             "winget" {

@@ -207,5 +207,5 @@ function State-ListFeatures {
     }
 
     $state = Get-Content -Path $global:DOTFILES_STATE_FILE -Raw | ConvertFrom-Json
-    return $state.features.PSObject.Properties.Name
+    return @($state.features.PSObject.Properties | ForEach-Object { $_.Name })
 }
