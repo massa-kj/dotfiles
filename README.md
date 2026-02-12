@@ -1,80 +1,121 @@
 # dotfiles
 
-## Prerequisites
+A cross-platform, declarative dotfiles management system supporting Linux, WSL, and Windows.
 
-Linux:
+- **Declarative**: Define my environment in YAML profiles
+- **Idempotent**: Safe to run multiple times
+- **Modular**: Features are self-contained units
+- **Dependency-aware**: Automatic dependency resolution
+- **Safe uninstall**: State tracking for clean removal
+- **Cross-platform**: Linux, WSL, and Windows support
 
-- Git must be installed
+## Quick Start
 
-	```sh
-  # e.g. ubuntu
-	sudo apt update && sudo apt upgrade -y
-	sudo apt install -y build-essential curl git
-	```
+### Linux / WSL
 
-Windows:
+```bash
+# 1. Clone repository
+git clone https://github.com/massa-kj/dotfiles.git ~/dotfiles
+cd ~/dotfiles
 
-- Git must be installed
+# 2. Run bootstrap
+./platforms/wsl/bootstrap.sh
 
-	```ps1
-	winget install Git.Git --source winget
-	```
+# 3. Apply profile
+./apply.sh profiles/wsl.yaml
+```
 
-- VC++ Runtime
+### Windows
 
-	Check if already installed
+```powershell
+# 1. Clone repository
+git clone https://github.com/massa-kj/dotfiles.git $HOME\dotfiles
+cd $HOME\dotfiles
 
-	```ps1
-	winget list --id Microsoft.VCRedist.2015+.x64
-	```
+# 2. Allow script execution
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 
-	Install
+# 3. Run bootstrap
+.\platforms\windows\bootstrap.ps1
+# What gets installed:
+# - git
+# - jq (JSON processor)
+# - yq (YAML processor)
 
-	```ps1
-	winget install Microsoft.VCRedist.2015+.x64 --source winget
-	```
+# 4. Apply profile
+.\apply.ps1 profiles\windows.yaml
+```
 
-- [PowerShell 7](https://learn.microsoft.com/ja-jp/powershell/scripting/whats-new/migrating-from-windows-powershell-51-to-powershell-7?view=powershell-7.4) or later
+## Architecture
 
-	```ps1
-	winget install --id Microsoft.PowerShell --source winget
-	```
+### Directory Structure
 
-## How to use
+```
+dotfiles/
+├── core/lib/           # Core libraries (bash & PowerShell)
+├── features/           # Self-contained feature modules
+│   ├── git/
+│   │   ├── meta.yaml             # Dependencies and metadata
+│   │   ├── meta.{platform}.yaml  #
+│   │   ├── install.sh            # Linux/WSL installer
+│   │   ├── install.ps1           # Windows installer
+│   │   ├── uninstall.sh          # Linux/WSL uninstaller
+│   │   ├── uninstall.ps1         # Windows uninstaller
+│   │   └── files/                # Configuration files
+│   └── ...
+├── platforms/          # Platform-specific bootstrap
+│   ├── wsl/
+│   └── windows/
+├── profiles/           # Declarative environment definitions
+│   ├── dev.yaml
+│   └── windows.yaml
+├── state/              # Installation state (tracked)
+├── apply.sh            # Entry point (Linux/WSL)
+└── apply.ps1           # Entry point (Windows)
+```
 
-1. Clone this repository to the home directory.
+### Design Philosophy
 
-1. Check the packages to be installed and comment them out if necessary.
+See [](.md) for detailed design documentation.
 
-    - dotfiles/version_manager/Brewfile
-    - dotfiles/version_manager/mise/config.toml
+**Core Principles:**
+- Separation of declaration (profiles) and implementation (features)
+- State as single source of truth
+- Platform differences isolated in bootstrap layer
+- Features are fully self-contained
 
-1. Run the install script.
+## Features
 
-    Linux:
+### Available Features
 
-    ```sh
-    cd ~/dotfiles/bin
-    # If you want to do a partial setup, run `./setup.sh` to see how to use it.
-    ./setup.sh all
-    ```
+- **Development Tools**: git, git-tools (lazygit), neovim, vscode
+- **Languages**: node, python, rust, lua
+- **Package Managers**: brew (Linux/macOS), scoop (Windows), mise
+- **Shells**: bash, powershell
+- **Terminal**: tmux (Linux/WSL)
+- ...
 
-    Windows:
+### Creating Custom Features
 
-    ```ps1
-    cd ~/dotfiles/bin
-    Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
-    # If you want to do a partial setup, run `./setup.ps1` to see how to use it.
-    ./setup.ps1 all
-    ```
+1. Create feature directory:
+   ```bash
+   mkdir -p features/myfeature/files
+   ```
 
-## Remind
+2. Define metadata (`features/myfeature/meta.yaml`):
+   ```yaml
+   depends:
+     - git  # Optional dependencies
+   ```
 
-- Build from scratch as much as possible.
+3. Implement installers:
+   - `install.sh` / `install.ps1` - Installation logic
+   - `uninstall.sh` / `uninstall.ps1` - Cleanup logic
 
-- Be aware of extensibility and portability.  
-  Always be aware of tool dependency. Emphasize pure functionality.
+4. Add to profile:
+   ```yaml
+   features:
+     - myfeature
+   ```
 
-- Don't forget to improve the environment.  
-  Regularly refer to other dotfiles and incorporate them.
-
+See existing features for implementation examples.
