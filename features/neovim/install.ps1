@@ -34,7 +34,7 @@ if (Test-Command "nvim") {
     }
     Log-Success "neovim package installed"
 }
-State-AddPackage -Feature $FeatureName -Package "neovim" -Manager (Get-PackageManager)
+State-AddPackage -Feature $FeatureName -Package "neovim"
 
 # Deploy configuration files
 $featureFilesDir = Join-Path $ScriptDir "files\nvim"

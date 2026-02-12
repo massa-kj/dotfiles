@@ -44,7 +44,7 @@ foreach ($tool in $tools) {
             Log-Success "$tool installed"
         }
     }
-    State-AddPackage -Feature $FeatureName -Package $tool -Manager (Get-PackageManager)
+    State-AddPackage -Feature $FeatureName -Package $tool
 }
 
 Log-Success "Feature $FeatureName installed successfully"

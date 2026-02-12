@@ -33,7 +33,7 @@ if (Test-Command "mise") {
     }
     Log-Success "mise package installed"
 }
-State-AddPackage -Feature $FeatureName -Package "mise" -Manager (Get-PackageManager)
+State-AddPackage -Feature $FeatureName -Package "mise"
 
 # Deploy configuration files if they exist
 $featureFilesDir = Join-Path $ScriptDir "files"

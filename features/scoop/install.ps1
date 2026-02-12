@@ -62,7 +62,7 @@ if (Test-Command "scoop") {
     
     # Mark as installed in state
     if (-not (State-HasFeature -Feature $FeatureName)) {
-        State-AddPackage -Feature $FeatureName -Package "scoop" -Manager "scoop"
+        State-AddPackage -Feature $FeatureName -Package "scoop"
     }
     
     Log-Success "Feature $FeatureName is already configured"
@@ -123,7 +123,7 @@ foreach ($bucket in $bucketsToAdd) {
 }
 
 # Add to state
-State-AddPackage -Feature $FeatureName -Package "scoop" -Manager "scoop"
+State-AddPackage -Feature $FeatureName -Package "scoop"
 
 Log-Success "Feature $FeatureName installed successfully"
 Write-Host ""
