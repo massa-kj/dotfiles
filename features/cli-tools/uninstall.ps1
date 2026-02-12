@@ -25,8 +25,8 @@ if (-not (State-HasFeature -Feature $FeatureName)) {
 # Uninstall packages
 $packages = State-GetPackages -Feature $FeatureName
 foreach ($pkg in $packages) {
-    Log-Info "Uninstalling package: $($pkg.name)"
-    Uninstall-Package -Name $pkg.name
+    Log-Info "Uninstalling package: $pkg"
+    Uninstall-Package -Name $pkg
 }
 
 # Remove feature from state
