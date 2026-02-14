@@ -70,6 +70,8 @@ dotfiles/
 │   ├── dev.yaml
 │   └── windows.yaml
 ├── state/              # Installation state (tracked)
+├── quality/            # Quality checks and linters
+├── tests/              # Logic and integration tests
 ├── apply.sh            # Entry point (Linux/WSL)
 └── apply.ps1           # Entry point (Windows)
 ```

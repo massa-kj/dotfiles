@@ -5,7 +5,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # The nvim directory (where the config file is located)
-NVIM_DIR="${SCRIPT_DIR}/../editor/nvim"
+NVIM_DIR="${SCRIPT_DIR}/../features/neovim/files/nvim"
 
 echo "==> Changing to $NVIM_DIR"
 cd "$NVIM_DIR"
