@@ -1,4 +1,3 @@
-name: python
 description: Python runtime with uv package manager and language server
 depends:
   - mise

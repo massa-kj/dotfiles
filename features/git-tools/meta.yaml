@@ -1,6 +1,3 @@
-# features/git-tools/meta.yaml
-# Git tools feature metadata
-
-# Common dependencies (all platforms)
+description: Git enhancement tools (lazygit, delta)
 depends:
   - git

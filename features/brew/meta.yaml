@@ -1,4 +1,2 @@
-# features/brew/meta.yaml
-# Homebrew feature metadata
-
+description: Homebrew package manager for Linux and WSL
 depends: []

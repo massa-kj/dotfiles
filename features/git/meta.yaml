@@ -1,4 +1,2 @@
-# features/git/meta.yaml
-# Git feature metadata
-
+description: Git version control with custom configuration
 depends: []

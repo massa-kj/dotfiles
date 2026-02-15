@@ -1,4 +1,2 @@
-# features/bash/meta.yaml
-# Bash feature metadata
-
+description: Bash shell configuration with custom settings
 depends: []

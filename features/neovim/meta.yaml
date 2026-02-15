@@ -1,6 +1,3 @@
-# features/neovim/meta.yaml
-# Neovim feature metadata
-
-# Common dependencies (all platforms)
+description: Neovim text editor with custom configuration
 depends:
   - git

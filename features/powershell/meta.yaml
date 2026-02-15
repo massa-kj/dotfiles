@@ -1,5 +1,2 @@
-# features/powershell/meta.yaml
-# PowerShell configuration feature metadata
-
-# Windows-only feature
+description: PowerShell configuration with custom profile
 depends: []

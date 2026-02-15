@@ -1,6 +1,2 @@
-# features/scoop/meta.yaml
-# Scoop package manager feature metadata
-
-# Windows-only feature
-# No dependencies - Scoop is a bootstrap-level tool
+description: Scoop package manager for Windows
 depends: []

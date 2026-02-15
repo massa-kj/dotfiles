@@ -1,5 +1,2 @@
-# features/cli-tools/meta.yaml
-# CLI tools feature metadata
-
-# Common dependencies (all platforms)
+description: Essential command-line utilities (fd, fzf, ripgrep, ghq)
 depends: []

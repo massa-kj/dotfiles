@@ -1,5 +1,2 @@
-# features/mise/meta.yaml
-# Mise (version manager) feature metadata
-
-# Common dependencies (all platforms)
+description: Polyglot runtime version manager
 depends: []

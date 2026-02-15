@@ -1,5 +1,2 @@
-# features/tmux/meta.yaml
-# Tmux feature metadata
-
-# Common dependencies (all platforms)
+description: Terminal multiplexer with custom configuration
 depends: []

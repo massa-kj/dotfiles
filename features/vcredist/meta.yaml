@@ -1,5 +1,2 @@
-# features/vcredist/meta.yaml
-# Visual C++ Redistributable feature metadata
-
-# Common dependencies (all platforms)
+description: Visual C++ Redistributable runtime libraries (Windows)
 depends: []
