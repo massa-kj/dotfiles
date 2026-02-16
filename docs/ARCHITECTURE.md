@@ -52,6 +52,44 @@ Each layer has strict responsibility constraints.
 
 Layer violations are considered architectural errors.
 
+## Physical Structure
+
+The logical architecture maps to the following directory structure:
+
+```
+dotfiles/
+├── core/lib/           # Core libraries (bash & PowerShell)
+├── features/           # Self-contained feature modules
+│   ├── git/
+│   │   ├── meta.yaml             # Dependencies and metadata
+│   │   ├── meta.{platform}.yaml  # Platform-specific metadata
+│   │   ├── install.sh            # Linux/WSL installer
+│   │   ├── install.ps1           # Windows installer
+│   │   ├── uninstall.sh          # Linux/WSL uninstaller
+│   │   ├── uninstall.ps1         # Windows uninstaller
+│   │   └── files/                # Configuration files
+│   └── ...
+├── platforms/          # Platform-specific bootstrap
+│   ├── wsl/
+│   └── windows/
+├── profiles/           # Declarative environment definitions
+│   ├── wsl.yaml
+│   └── windows.yaml
+├── state/              # Installation state (tracked)
+├── docs/               # Documentation and guides
+├── quality/            # Quality checks and linters
+├── tests/              # Logic and integration tests
+├── apply.sh            # Entry point (Linux/WSL)
+└── apply.ps1           # Entry point (Windows)
+```
+
+This structure enforces:
+
+* Layer separation through directory boundaries
+* Feature independence through self-contained modules
+* Platform abstraction through bootstrap isolation
+* State authority through dedicated directory
+
 ## Layer Responsibilities
 
 ### platforms/ (Bootstrap Layer)
