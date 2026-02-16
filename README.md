@@ -1,123 +1,174 @@
 # dotfiles
 
-A cross-platform, declarative dotfiles management system supporting Linux, WSL, and Windows.
+A cross-platform, declarative environment management system.
 
-- **Declarative**: Define my environment in YAML profiles
-- **Idempotent**: Safe to run multiple times
-- **Modular**: Features are self-contained units
-- **Dependency-aware**: Automatic dependency resolution
-- **Safe uninstall**: State tracking for clean removal
-- **Cross-platform**: Linux, WSL, and Windows support
+Supports:
 
-## Quick Start
+* Linux
+* WSL
+* Windows
 
-### Linux / WSL
+This repository allows you to define your development environment declaratively and reproduce it safely.
+
+# Overview
+
+This project is built around five principles:
+
+* **Declarative** – Profiles define what should exist.
+* **Idempotent** – Safe to run repeatedly.
+* **Modular** – Each tool is an independent feature.
+* **Safe** – Uninstall removes only tracked resources.
+* **Cross-platform** – Works across Linux, WSL, and Windows.
+
+This is not a collection of configuration files.
+It is a deterministic environment orchestration system.
+
+# Quick Start
+
+## Linux / WSL
 
 ```bash
-# 1. Clone repository
 git clone https://github.com/massa-kj/dotfiles.git ~/dotfiles
 cd ~/dotfiles
 
-# 2. Run bootstrap
 ./platforms/wsl/bootstrap.sh
-
-# 3. Apply profile
 ./apply.sh profiles/wsl.yaml
 ```
 
-### Windows
+> What gets installed by bootstrap:
+> - git
+> - jq (JSON processor)
+> - yq (YAML processor)
+
+## Windows
 
 ```powershell
-# 1. Clone repository
 git clone https://github.com/massa-kj/dotfiles.git $HOME\dotfiles
 cd $HOME\dotfiles
 
-# 2. Allow script execution
 Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 
-# 3. Run bootstrap
 .\platforms\windows\bootstrap.ps1
-# What gets installed:
-# - git
-# - jq (JSON processor)
-# - yq (YAML processor)
-
-# 4. Apply profile
 .\apply.ps1 profiles\windows.yaml
 ```
 
-## Architecture
+Bootstrap installs only minimal execution dependencies.
 
-### Directory Structure
+> What gets installed by bootstrap:
+> - git
+> - jq (JSON processor)
+> - yq (YAML processor)
 
-```
-dotfiles/
-├── core/lib/           # Core libraries (bash & PowerShell)
-├── features/           # Self-contained feature modules
-│   ├── git/
-│   │   ├── meta.yaml             # Dependencies and metadata
-│   │   ├── meta.{platform}.yaml  #
-│   │   ├── install.sh            # Linux/WSL installer
-│   │   ├── install.ps1           # Windows installer
-│   │   ├── uninstall.sh          # Linux/WSL uninstaller
-│   │   ├── uninstall.ps1         # Windows uninstaller
-│   │   └── files/                # Configuration files
-│   └── ...
-├── platforms/          # Platform-specific bootstrap
-│   ├── wsl/
-│   └── windows/
-├── profiles/           # Declarative environment definitions
-│   ├── dev.yaml
-│   └── windows.yaml
-├── state/              # Installation state (tracked)
-├── quality/            # Quality checks and linters
-├── tests/              # Logic and integration tests
-├── apply.sh            # Entry point (Linux/WSL)
-└── apply.ps1           # Entry point (Windows)
+Feature installation is handled by `apply`.
+
+# Using Profiles
+
+Profiles define the desired environment.
+
+Example:
+
+```yaml
+features:
+  - git
+  - neovim
+  - node
 ```
 
-### Design Philosophy
+Run:
 
-See [](.md) for detailed design documentation.
+```bash
+./apply.sh profiles/wsl.yaml
+```
 
-**Core Principles:**
-- Separation of declaration (profiles) and implementation (features)
-- State as single source of truth
-- Platform differences isolated in bootstrap layer
-- Features are fully self-contained
+Profiles declare intent only.
 
-## Features
+They do not contain logic or installation details.
 
-### Available Features
+# Architecture
 
-- **Development Tools**: git, git-tools (lazygit), neovim, vscode
-- **Languages**: node, python, rust, lua
-- **Package Managers**: brew (Linux/macOS), scoop (Windows), mise
-- **Shells**: bash, powershell
-- **Terminal**: tmux (Linux/WSL)
-- ...
+The system is structured into layers:
 
-### Creating Custom Features
+```
+platforms → profiles → apply → core → features
+                         ↓
+                       state
+```
 
-1. Create feature directory:
-   ```bash
-   mkdir -p features/myfeature/files
-   ```
+* platforms prepare execution
+* profiles declare intent
+* apply orchestrates
+* core provides infrastructure
+* features implement tools
+* state records installed resources
 
-2. Define metadata (`features/myfeature/meta.yaml`):
-   ```yaml
-   depends:
-     - git  # Optional dependencies
-   ```
+For full design documentation, see [this section](#design-documents).
 
-3. Implement installers:
-   - `install.sh` / `install.ps1` - Installation logic
-   - `uninstall.sh` / `uninstall.ps1` - Cleanup logic
+# Safety Model
 
-4. Add to profile:
-   ```yaml
-   features:
-     - myfeature
-   ```
+Uninstall operations remove only resources recorded in state.
 
-See existing features for implementation examples.
+The system never scans the filesystem to infer what to delete.
+
+State is the only authority.
+
+See `STATE_SPEC.md` for details.
+
+# Extending the System
+
+To create a new feature:
+
+```
+features/mytool/
+├── meta.yaml
+├── install.sh
+├── uninstall.sh
+└── files/
+```
+
+Declare dependencies in `meta.yaml`:
+
+```yaml
+depends:
+  - git
+```
+
+Use package abstraction and state APIs.
+
+See `FEATURE_GUIDE.md` for full guidelines.
+
+# Documentation
+
+## Design Documents
+
+* **[ARCHITECTURE.md](docs/ARCHITECTURE.md)** – System design and layer responsibilities
+  * Read this to understand *why* the system is structured this way
+  * Covers: layer boundaries, data flow, architectural constraints
+
+* **[CORE.md](docs/CORE.md)** – Core module responsibilities and API stability
+  * Read this to understand infrastructure primitives and stability guarantees
+  * Covers: module responsibilities, API classification, extension rules
+
+* **[FEATURE_GUIDE.md](docs/FEATURE_GUIDE.md)** – Feature implementation rules
+  * Read this to create or modify features
+  * Covers: feature structure, meta.yaml rules, state interaction
+
+* **[STATE_SPEC.md](docs/STATE_SPEC.md)** – State schema and safety model
+  * Read this to understand state format and uninstall safety
+  * Covers: JSON schema, invariants, versioning policy
+
+## Writing Guidelines
+
+* **[DOCUMENTATION_GUIDE.md](docs/DOCUMENTATION_GUIDE.md)** – Documentation structure policy
+  * Read this before updating documentation
+  * Covers: what to document where, stability vs implementation
+
+# Philosophy
+
+This project prioritizes:
+
+* Safety over convenience
+* Determinism over cleverness
+* Replaceability over tight coupling
+* Clear boundaries over flexibility
+
+The architecture is intentionally strict to preserve long-term maintainability.
