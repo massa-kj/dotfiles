@@ -1,15 +1,25 @@
-# Orchestration of install/uninstall operations
+# -----------------------------------------------------------------------------
+# Module: orchestrator
+#
+# Responsibility:
+#   Orchestrate feature installation and uninstallation workflow.
+#
+# Public API (Internal):
+#   Read-Profile <ProfileFile>
+#   Get-FeatureDiff <SortedFeatures>
+#   Invoke-Uninstall <Features>
+#   Invoke-Install <Features>
+#   Show-Summary
+# -----------------------------------------------------------------------------
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 # This library expects env.ps1, logger.ps1, and state.ps1 to be loaded by the caller.
 
+# Read-Profile <ProfileFile>
+# Read profile YAML file and extract feature list.
 function Read-Profile {
-    <#
-    .SYNOPSIS
-    Read profile file and extract features
-    #>
     param(
         [Parameter(Mandatory=$true)]
         [string]$ProfileFile
@@ -59,11 +69,9 @@ function Read-Profile {
     }
 }
 
+# Get-FeatureDiff <SortedFeatures>
+# Calculate difference between desired and installed features.
 function Get-FeatureDiff {
-    <#
-    .SYNOPSIS
-    Calculate diff between desired and installed features
-    #>
     param(
         [Parameter(Mandatory=$true)]
         [string[]]$SortedFeatures
@@ -100,11 +108,9 @@ function Get-FeatureDiff {
     }
 }
 
+# Invoke-Uninstall <Features>
+# Execute uninstall scripts for features in reverse order.
 function Invoke-Uninstall {
-    <#
-    .SYNOPSIS
-    Execute uninstall for features
-    #>
     param(
         [Parameter(Mandatory=$true)]
         [AllowEmptyCollection()]
@@ -143,11 +149,9 @@ function Invoke-Uninstall {
     return $true
 }
 
+# Invoke-Install <Features>
+# Execute install scripts for features in dependency order.
 function Invoke-Install {
-    <#
-    .SYNOPSIS
-    Execute install for features
-    #>
     param(
         [Parameter(Mandatory=$true)]
         [AllowEmptyCollection()]
@@ -183,12 +187,9 @@ function Invoke-Install {
     return $true
 }
 
+# Show-Summary
+# Display summary of successfully installed features.
 function Show-Summary {
-    <#
-    .SYNOPSIS
-    Print summary of installed features
-    #>
-    
     Write-Host ""
     Log-Success "Profile applied successfully!"
     Write-Host ""

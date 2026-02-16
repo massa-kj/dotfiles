@@ -1,4 +1,14 @@
-# Dependency resolution and topological sorting
+# -----------------------------------------------------------------------------
+# Module: resolver
+#
+# Responsibility:
+#   Resolve feature dependencies and perform topological sorting.
+#
+# Public API (Stable):
+#   Resolve-Dependencies <DesiredFeatures>
+#   Read-FeatureMetadata <Features>
+#   Invoke-TopoSortDFS <Feature> <DesiredFeatures>
+# -----------------------------------------------------------------------------
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
@@ -11,11 +21,9 @@ $script:Visited = @{}
 $script:InStack = @{}
 $script:Sorted = @()
 
+# Read-FeatureMetadata <Features>
+# Read dependency metadata from meta.yaml files for all features.
 function Read-FeatureMetadata {
-    <#
-    .SYNOPSIS
-    Read metadata for all features in profile
-    #>
     param(
         [Parameter(Mandatory=$true)]
         [string[]]$Features
@@ -96,11 +104,9 @@ function Read-FeatureMetadata {
     return $true
 }
 
+# Invoke-TopoSortDFS <Feature> <DesiredFeatures>
+# Perform depth-first search for topological sorting.
 function Invoke-TopoSortDFS {
-    <#
-    .SYNOPSIS
-    Depth-first search for topological sort
-    #>
     param(
         [Parameter(Mandatory=$true)]
         [string]$Feature,
@@ -144,11 +150,9 @@ function Invoke-TopoSortDFS {
     return $true
 }
 
+# Resolve-Dependencies <DesiredFeatures>
+# Resolve dependencies and return topologically sorted feature list.
 function Resolve-Dependencies {
-    <#
-    .SYNOPSIS
-    Resolve dependencies and return sorted feature list
-    #>
     param(
         [Parameter(Mandatory=$true)]
         [string[]]$DesiredFeatures

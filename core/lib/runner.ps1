@@ -1,15 +1,27 @@
-# Command helpers and utilities
+# -----------------------------------------------------------------------------
+# Module: runner
+#
+# Responsibility:
+#   Provide command execution utilities and helpers.
+#
+# Public API (Stable):
+#   Test-Command <Command>
+#   Assert-Command <Command>
+#   Invoke-OrDie <ScriptBlock> [Description]
+#   Test-Administrator
+#   Assert-Administrator
+#   Invoke-WithRetry <ScriptBlock> [MaxAttempts] [DelaySeconds]
+#   Get-UserConfirmation <Message> [DefaultYes]
+# -----------------------------------------------------------------------------
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 # This library expects logger.ps1 to be loaded by the caller.
 
+# Test-Command <Command>
+# Check if a command exists in PATH.
 function Test-Command {
-    <#
-    .SYNOPSIS
-    Check if a command exists in PATH
-    #>
     param(
         [Parameter(Mandatory=$true)]
         [string]$Command
@@ -18,11 +30,9 @@ function Test-Command {
     return $null -ne (Get-Command $Command -ErrorAction SilentlyContinue)
 }
 
+# Assert-Command <Command>
+# Ensure a command exists, throw exception if not found.
 function Assert-Command {
-    <#
-    .SYNOPSIS
-    Require that a command exists, exit if not found
-    #>
     param(
         [Parameter(Mandatory=$true)]
         [string]$Command
@@ -34,11 +44,9 @@ function Assert-Command {
     }
 }
 
+# Invoke-OrDie <ScriptBlock> [Description]
+# Execute command and throw exception on failure.
 function Invoke-OrDie {
-    <#
-    .SYNOPSIS
-    Run command and exit on failure
-    #>
     param(
         [Parameter(Mandatory=$true)]
         [scriptblock]$ScriptBlock,
@@ -60,22 +68,16 @@ function Invoke-OrDie {
     }
 }
 
+# Test-Administrator
+# Check if running with administrator privileges.
 function Test-Administrator {
-    <#
-    .SYNOPSIS
-    Check if running as Administrator
-    #>
-    
     $currentPrincipal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
     return $currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 }
 
+# Assert-Administrator
+# Ensure administrator privileges, throw exception if not running as admin.
 function Assert-Administrator {
-    <#
-    .SYNOPSIS
-    Require administrator privileges
-    #>
-    
     if (-not (Test-Administrator)) {
         Log-Error "This operation requires Administrator privileges"
         Log-Info "Please restart PowerShell as Administrator"
@@ -83,11 +85,9 @@ function Assert-Administrator {
     }
 }
 
+# Invoke-WithRetry <ScriptBlock> [MaxAttempts] [DelaySeconds]
+# Execute command with automatic retry logic on failure.
 function Invoke-WithRetry {
-    <#
-    .SYNOPSIS
-    Execute command with retry logic
-    #>
     param(
         [Parameter(Mandatory=$true)]
         [scriptblock]$ScriptBlock,
@@ -113,11 +113,9 @@ function Invoke-WithRetry {
     }
 }
 
+# Get-UserConfirmation <Message> [DefaultYes]
+# Prompt user for yes/no confirmation and return boolean result.
 function Get-UserConfirmation {
-    <#
-    .SYNOPSIS
-    Ask user for yes/no confirmation
-    #>
     param(
         [Parameter(Mandatory=$true)]
         [string]$Message,

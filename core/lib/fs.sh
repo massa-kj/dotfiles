@@ -1,8 +1,23 @@
 #!/usr/bin/env bash
-# File system helpers
+# -----------------------------------------------------------------------------
+# Module: fs
+#
+# Responsibility:
+#   Provide file system operations for feature installation.
+#
+# Public API (Stable):
+#   ensure_dir <path>
+#   backup_file <target>
+#   backup_dir <target>
+#   link_file <feature> <src> <dst>
+#   link_dir <feature> <src> <dst>
+#   remove_tracked_files <feature>
+# -----------------------------------------------------------------------------
 
 # This library expects core/lib/logger.sh and core/lib/state.sh to be sourced by the caller.
 
+# ensure_dir <path>
+# Create directory if it does not exist.
 ensure_dir() {
     local path="$1"
 
@@ -16,6 +31,8 @@ ensure_dir() {
     fi
 }
 
+# backup_file <target>
+# Backup existing file with timestamp if it exists and is not a symlink.
 backup_file() {
     local target="$1"
 
@@ -34,6 +51,8 @@ backup_file() {
     fi
 }
 
+# backup_dir <target>
+# Backup existing directory with timestamp if it exists and is not a symlink.
 backup_dir() {
     local target="$1"
 
@@ -49,6 +68,8 @@ backup_dir() {
     fi
 }
 
+# link_file <feature> <src> <dst>
+# Create symbolic link for file and register to state.
 link_file() {
     local feature="$1"
     local src="$2"
@@ -72,6 +93,8 @@ link_file() {
     log_success "Linked $dst"
 }
 
+# link_dir <feature> <src> <dst>
+# Create symbolic link for directory and register to state.
 link_dir() {
     local feature="$1"
     local src="$2"
@@ -100,6 +123,8 @@ link_dir() {
     log_success "Linked $dst"
 }
 
+# remove_tracked_files <feature>
+# Remove all files tracked by a feature from state.
 remove_tracked_files() {
     local feature="$1"
 

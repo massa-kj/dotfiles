@@ -1,5 +1,14 @@
 #!/usr/bin/env bash
-# Dependency resolution and topological sorting
+# -----------------------------------------------------------------------------
+# Module: resolver
+#
+# Responsibility:
+#   Resolve feature dependencies and perform topological sorting.
+#
+# Public API (Stable):
+#   resolve_dependencies <desired_features> <output_array>
+#   read_feature_metadata <features>
+# -----------------------------------------------------------------------------
 
 # This library expects core/env.sh and core/lib/logger.sh to be sourced by the caller.
 
@@ -9,7 +18,8 @@ declare -g -A _RESOLVER_VISITED
 declare -g -A _RESOLVER_IN_STACK
 declare -g -a _RESOLVER_SORTED
 
-# Read metadata for all features in profile
+# read_feature_metadata <features>
+# Read dependency metadata from meta.yaml files for all features.
 read_feature_metadata() {
     local -n features=$1
     
@@ -82,7 +92,8 @@ _topo_sort_dfs() {
     _RESOLVER_SORTED+=("$feature")
 }
 
-# Resolve dependencies and return sorted feature list
+# resolve_dependencies <desired_features> <output_array>
+# Resolve dependencies and return topologically sorted feature list.
 resolve_dependencies() {
     local -n desired_features=$1
     local -n output_array=$2

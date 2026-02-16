@@ -1,9 +1,23 @@
 #!/usr/bin/env bash
-# State operation API
+# -----------------------------------------------------------------------------
+# Module: state
+#
+# Responsibility:
+#   Manage state file operations safely with atomic updates.
+#
+# Public API (Stable):
+#   state_init
+#   state_has_feature <feature>
+#   state_add_package <feature> <package>
+#   state_add_file <feature> <path>
+#   state_get_packages <feature>
+#   state_get_files <feature>
+#   state_remove_feature <feature>
+#   state_list_features
+# -----------------------------------------------------------------------------
 
-# Dependencies: jq, core/env.sh, core/lib/logger.sh
-
-# Initialize state
+# state_init
+# Initialize or validate state file.
 state_init() {
     if [[ -z "$DOTFILES_STATE_FILE" ]]; then
         log_error "DOTFILES_STATE_FILE is not set"
@@ -29,7 +43,8 @@ state_init() {
     fi
 }
 
-# Check if feature exists
+# state_has_feature <feature>
+# Check if a feature exists in state.
 state_has_feature() {
     local feature="$1"
     if [[ -z "$feature" ]]; then
@@ -40,7 +55,8 @@ state_has_feature() {
     jq -e ".features[\"$feature\"] != null" "$DOTFILES_STATE_FILE" >/dev/null 2>&1
 }
 
-# Add package to feature
+# state_add_package <feature> <package>
+# Register a package for a feature with deduplication.
 state_add_package() {
     local feature="$1"
     local package="$2"
@@ -72,7 +88,8 @@ state_add_package() {
     mv "$tmp_file" "$DOTFILES_STATE_FILE"
 }
 
-# Add file to feature
+# state_add_file <feature> <path>
+# Register a file path for a feature with deduplication.
 state_add_file() {
     local feature="$1"
     local file="$2"
@@ -104,7 +121,8 @@ state_add_file() {
     mv "$tmp_file" "$DOTFILES_STATE_FILE"
 }
 
-# Get list of packages for feature
+# state_get_packages <feature>
+# Retrieve package list for a feature (one per line).
 state_get_packages() {
     local feature="$1"
 
@@ -120,7 +138,8 @@ state_get_packages() {
     jq -r ".features[\"$feature\"].packages[]" "$DOTFILES_STATE_FILE" 2>/dev/null
 }
 
-# Get list of files for feature
+# state_get_files <feature>
+# Retrieve file path list for a feature (one per line).
 state_get_files() {
     local feature="$1"
 
@@ -136,7 +155,8 @@ state_get_files() {
     jq -r ".features[\"$feature\"].files[]" "$DOTFILES_STATE_FILE" 2>/dev/null
 }
 
-# Remove feature
+# state_remove_feature <feature>
+# Remove a feature entry from state.
 state_remove_feature() {
     local feature="$1"
 
@@ -163,7 +183,8 @@ state_remove_feature() {
     mv "$tmp_file" "$DOTFILES_STATE_FILE"
 }
 
-# Get list of installed features
+# state_list_features
+# Retrieve all installed feature names (one per line).
 state_list_features() {
     if [[ ! -f "$DOTFILES_STATE_FILE" ]]; then
         return 0

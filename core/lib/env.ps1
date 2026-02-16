@@ -1,4 +1,9 @@
-# Environment variable definitions
+# -----------------------------------------------------------------------------
+# Module: env
+#
+# Responsibility:
+#   Define environment variables for dotfiles framework.
+# -----------------------------------------------------------------------------
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"

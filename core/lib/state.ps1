@@ -1,15 +1,26 @@
-# State operation API
+# -----------------------------------------------------------------------------
+# Module: state
+#
+# Responsibility:
+#   Manage state file operations safely with atomic updates.
+#
+# Public API (Stable):
+#   State-Init
+#   State-HasFeature <Feature>
+#   State-AddPackage <Feature> <Package>
+#   State-AddFile <Feature> <File>
+#   State-GetPackages <Feature>
+#   State-GetFiles <Feature>
+#   State-RemoveFeature <Feature>
+#   State-ListFeatures
+# -----------------------------------------------------------------------------
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-# Dependencies: ConvertFrom-Json, ConvertTo-Json, env.ps1, logger.ps1
-
+# State-Init
+# Initialize or validate state file.
 function State-Init {
-    <#
-    .SYNOPSIS
-    Initialize state file
-    #>
     
     if (-not $global:DOTFILES_STATE_FILE) {
         Log-Error "DOTFILES_STATE_FILE is not set"
@@ -42,11 +53,9 @@ function State-Init {
     return $true
 }
 
+# State-HasFeature <Feature>
+# Check if a feature exists in state.
 function State-HasFeature {
-    <#
-    .SYNOPSIS
-    Check if feature exists in state
-    #>
     param(
         [Parameter(Mandatory=$true)]
         [string]$Feature
@@ -56,11 +65,9 @@ function State-HasFeature {
     return $null -ne $state.features.PSObject.Properties[$Feature]
 }
 
+# State-AddPackage <Feature> <Package>
+# Register a package for a feature with deduplication.
 function State-AddPackage {
-    <#
-    .SYNOPSIS
-    Add package to feature
-    #>
     param(
         [Parameter(Mandatory=$true)]
         [string]$Feature,
@@ -94,11 +101,9 @@ function State-AddPackage {
     }
 }
 
+# State-AddFile <Feature> <File>
+# Register a file path for a feature with deduplication.
 function State-AddFile {
-    <#
-    .SYNOPSIS
-    Add file to feature
-    #>
     param(
         [Parameter(Mandatory=$true)]
         [string]$Feature,
@@ -132,11 +137,9 @@ function State-AddFile {
     }
 }
 
+# State-GetPackages <Feature>
+# Retrieve package list for a feature.
 function State-GetPackages {
-    <#
-    .SYNOPSIS
-    Get list of packages for feature
-    #>
     param(
         [Parameter(Mandatory=$true)]
         [string]$Feature
@@ -150,11 +153,9 @@ function State-GetPackages {
     return $state.features.$Feature.packages
 }
 
+# State-GetFiles <Feature>
+# Retrieve file path list for a feature.
 function State-GetFiles {
-    <#
-    .SYNOPSIS
-    Get list of files for feature
-    #>
     param(
         [Parameter(Mandatory=$true)]
         [string]$Feature
@@ -168,11 +169,9 @@ function State-GetFiles {
     return $state.features.$Feature.files
 }
 
+# State-RemoveFeature <Feature>
+# Remove a feature entry from state.
 function State-RemoveFeature {
-    <#
-    .SYNOPSIS
-    Remove feature from state
-    #>
     param(
         [Parameter(Mandatory=$true)]
         [string]$Feature
@@ -196,12 +195,9 @@ function State-RemoveFeature {
     }
 }
 
+# State-ListFeatures
+# Retrieve all installed feature names.
 function State-ListFeatures {
-    <#
-    .SYNOPSIS
-    Get list of installed features
-    #>
-    
     if (-not (Test-Path $global:DOTFILES_STATE_FILE)) {
         return @()
     }

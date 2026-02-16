@@ -280,21 +280,6 @@ Breaking changes to these functions require:
 * `read_feature_metadata`
 * `resolve_dependencies`
 
-#### Orchestrator Module
-
-* `read_profile`
-* `calculate_diff`
-* `run_install`
-* `run_uninstall`
-
-### Internal API
-
-**For core module use only.**
-
-May change without external impact.
-
-Features must not call these directly.
-
 #### File System Module (fs)
 
 * `ensure_dir`
@@ -319,6 +304,21 @@ Features must not call these directly.
 * `require_command`
 * `run_or_die`
 * `ensure_sudo`
+
+### Internal API
+
+**For core module use only.**
+
+May change without external impact.
+
+Features must not call these directly.
+
+#### Orchestrator Module
+
+* `read_profile`
+* `calculate_diff`
+* `run_install`
+* `run_uninstall`
 
 #### Environment Module (env)
 

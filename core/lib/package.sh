@@ -1,5 +1,18 @@
 #!/usr/bin/env bash
-# Package manager abstraction
+# -----------------------------------------------------------------------------
+# Module: package
+#
+# Responsibility:
+#   Provide package manager abstraction for system packages and runtimes.
+#
+# Public API (Stable):
+#   install_package <name>
+#   remove_package <name>
+#   install_runtime <name> <version>
+#   remove_runtime <name> [version]
+#   has_package <name>
+#   has_runtime <name> [version]
+# -----------------------------------------------------------------------------
 
 # This library expects core/env.sh and core/lib/logger.sh to be sourced by the caller.
 
@@ -20,7 +33,8 @@ _detect_package_manager() {
     return 1
 }
 
-# Check if a package is installed
+# has_package <name>
+# Check if a package is installed.
 has_package() {
     local name="$1"
     if [[ -z "$name" ]]; then
@@ -47,7 +61,8 @@ has_package() {
     esac
 }
 
-# Install a package
+# install_package <name>
+# Install a package using detected package manager.
 install_package() {
     local name="$1"
     if [[ -z "$name" ]]; then
@@ -86,7 +101,8 @@ install_package() {
     return 0
 }
 
-# Remove a package
+# remove_package <name>
+# Remove a package using detected package manager.
 remove_package() {
     local name="$1"
     if [[ -z "$name" ]]; then
@@ -125,7 +141,8 @@ remove_package() {
     return 0
 }
 
-# Check if a runtime is installed via mise
+# has_runtime <name> [version]
+# Check if a runtime is installed via mise.
 has_runtime() {
     local name="$1"
     local version="${2:-}"
@@ -149,7 +166,8 @@ has_runtime() {
     return $?
 }
 
-# Install a runtime via mise
+# install_runtime <name> <version>
+# Install a runtime via mise and set as global default.
 install_runtime() {
     local name="$1"
     local version="$2"
@@ -181,7 +199,8 @@ install_runtime() {
     mise use -g "$name@$version"
 }
 
-# Remove a runtime via mise
+# remove_runtime <name> [version]
+# Remove a runtime via mise.
 remove_runtime() {
     local name="$1"
     local version="${2:-}"

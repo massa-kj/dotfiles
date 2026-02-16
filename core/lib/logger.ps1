@@ -1,4 +1,17 @@
-# Log output functions
+# -----------------------------------------------------------------------------
+# Module: logger
+#
+# Responsibility:
+#   Provide logging functions with color-coded output.
+#
+# Public API (Stable):
+#   Log-Debug <Message>
+#   Log-Info <Message>
+#   Log-Success <Message>
+#   Log-Warn <Message>
+#   Log-Error <Message>
+#   Log-Task <Message>
+# -----------------------------------------------------------------------------
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
@@ -28,31 +41,43 @@ function Write-ColorLog {
     }
 }
 
+# Log-Debug <Message>
+# Output debug level log message.
 function Log-Debug {
     param([string]$Message)
     Write-ColorLog -Message $Message -Color $script:COLOR_GRAY -Level "DEBUG"
 }
 
+# Log-Info <Message>
+# Output info level log message.
 function Log-Info {
     param([string]$Message)
     Write-ColorLog -Message $Message -Color $script:COLOR_BLUE -Level "INFO"
 }
 
+# Log-Success <Message>
+# Output success level log message.
 function Log-Success {
     param([string]$Message)
     Write-ColorLog -Message $Message -Color $script:COLOR_GREEN -Level "SUCCESS"
 }
 
+# Log-Warn <Message>
+# Output warning level log message.
 function Log-Warn {
     param([string]$Message)
     Write-ColorLog -Message $Message -Color $script:COLOR_YELLOW -Level "WARN"
 }
 
+# Log-Error <Message>
+# Output error level log message.
 function Log-Error {
     param([string]$Message)
     Write-ColorLog -Message $Message -Color $script:COLOR_RED -Level "ERROR"
 }
 
+# Log-Task <Message>
+# Output task execution marker for start/end of processing.
 function Log-Task {
     param([string]$Message)
     

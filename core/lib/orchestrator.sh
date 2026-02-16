@@ -1,9 +1,22 @@
 #!/usr/bin/env bash
-# Orchestration of install/uninstall operations
+# -----------------------------------------------------------------------------
+# Module: orchestrator
+#
+# Responsibility:
+#   Orchestrate feature installation and uninstallation workflow.
+#
+# Public API (Internal):
+#   read_profile <profile_file> <output_array>
+#   calculate_diff <sorted_features> <to_install> <to_uninstall>
+#   run_uninstall <features>
+#   run_install <features>
+#   print_summary
+# -----------------------------------------------------------------------------
 
 # This library expects core/env.sh, core/lib/logger.sh, and core/lib/state.sh to be sourced by the caller.
 
-# Read profile file
+# read_profile <profile_file> <output_array>
+# Read profile YAML file and extract feature list.
 read_profile() {
     local profile_file="$1"
     local -n output_array=$2
@@ -25,7 +38,8 @@ read_profile() {
     return 0
 }
 
-# Calculate diff between desired and installed features
+# calculate_diff <sorted_features> <to_install> <to_uninstall>
+# Calculate difference between desired and installed features.
 calculate_diff() {
     local -n sorted_features=$1
     local -n to_install=$2
@@ -54,7 +68,8 @@ calculate_diff() {
     log_info "Features to uninstall: ${to_uninstall[*]:-none}"
 }
 
-# Execute uninstall for features
+# run_uninstall <features>
+# Execute uninstall scripts for features in reverse order.
 run_uninstall() {
     local -n features=$1
     
@@ -84,7 +99,8 @@ run_uninstall() {
     return 0
 }
 
-# Execute install for features
+# run_install <features>
+# Execute install scripts for features in dependency order.
 run_install() {
     local -n features=$1
     
@@ -112,7 +128,8 @@ run_install() {
     return 0
 }
 
-# Print summary of installed features
+# print_summary
+# Display summary of successfully installed features.
 print_summary() {
     echo ""
     log_success "Profile applied successfully!"

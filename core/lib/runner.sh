@@ -1,9 +1,21 @@
 #!/usr/bin/env bash
-# Command helpers
+# -----------------------------------------------------------------------------
+# Module: runner
+#
+# Responsibility:
+#   Provide command execution utilities and helpers.
+#
+# Public API (Stable):
+#   has_command <cmd>
+#   require_command <cmd>
+#   run_or_die <command...>
+#   ensure_sudo
+# -----------------------------------------------------------------------------
 
 # This library expects core/lib/logger.sh to be sourced by the caller.
 
-# Check if a command exists in PATH
+# has_command <cmd>
+# Check if a command exists in PATH.
 has_command() {
     local cmd="$1"
 
@@ -15,6 +27,8 @@ has_command() {
     command -v "$cmd" >/dev/null 2>&1
 }
 
+# require_command <cmd>
+# Ensure a command exists, exit with error if not found.
 require_command() {
     local cmd="$1"
 
@@ -29,6 +43,8 @@ require_command() {
     fi
 }
 
+# run_or_die <command...>
+# Execute command and exit on failure.
 run_or_die() {
     if [[ $# -eq 0 ]]; then
         log_error "run_or_die: command is required"
@@ -44,6 +60,8 @@ run_or_die() {
     fi
 }
 
+# ensure_sudo
+# Request sudo privileges if on Linux/WSL platforms.
 ensure_sudo() {
     if [[ "${DOTFILES_PLATFORM:-}" == "linux" || "${DOTFILES_PLATFORM:-}" == "wsl" ]]; then
         if ! sudo -n true 2>/dev/null; then

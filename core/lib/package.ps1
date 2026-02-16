@@ -1,16 +1,27 @@
-# Package manager abstraction for Windows
+# -----------------------------------------------------------------------------
+# Module: package
+#
+# Responsibility:
+#   Provide package manager abstraction for system packages and runtimes.
+#
+# Public API (Stable):
+#   Install-Package <Name> [Manager] [Bucket]
+#   Uninstall-Package <Name> [Manager]
+#   Install-Runtime <Name> <Version>
+#   Uninstall-Runtime <Name> [Version]
+#   Get-PackageManager
+#   Test-Package <Name> [Manager]
+#   Test-Runtime <Name> [Version]
+# -----------------------------------------------------------------------------
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 # This library expects env.ps1 and logger.ps1 to be loaded by the caller.
 
+# Get-PackageManager
+# Detect available package manager on the system.
 function Get-PackageManager {
-    <#
-    .SYNOPSIS
-    Detect available package manager
-    #>
-    
     # Prefer Scoop
     if (Get-Command scoop -ErrorAction SilentlyContinue) {
         return "scoop"
@@ -25,11 +36,9 @@ function Get-PackageManager {
     throw "No package manager available"
 }
 
+# Test-Package <Name> [Manager]
+# Check if a package is installed.
 function Test-Package {
-    <#
-    .SYNOPSIS
-    Check if a package is installed
-    #>
     param(
         [Parameter(Mandatory=$true)]
         [string]$Name,
@@ -56,11 +65,9 @@ function Test-Package {
     }
 }
 
+# Install-Package <Name> [Manager] [Bucket]
+# Install a package using specified or detected package manager.
 function Install-Package {
-    <#
-    .SYNOPSIS
-    Install a package
-    #>
     param(
         [Parameter(Mandatory=$true)]
         [string]$Name,
@@ -110,11 +117,9 @@ function Install-Package {
     }
 }
 
+# Uninstall-Package <Name> [Manager]
+# Uninstall a package using specified or detected package manager.
 function Uninstall-Package {
-    <#
-    .SYNOPSIS
-    Uninstall a package
-    #>
     param(
         [Parameter(Mandatory=$true)]
         [string]$Name,
@@ -159,11 +164,9 @@ function Uninstall-Package {
     }
 }
 
+# Test-Runtime <Name> [Version]
+# Check if a runtime is installed via mise.
 function Test-Runtime {
-    <#
-    .SYNOPSIS
-    Check if a runtime is installed via mise
-    #>
     param(
         [Parameter(Mandatory=$true)]
         [string]$Name,
@@ -188,11 +191,9 @@ function Test-Runtime {
     }
 }
 
+# Install-Runtime <Name> <Version>
+# Install a runtime via mise and set as global default.
 function Install-Runtime {
-    <#
-    .SYNOPSIS
-    Install a runtime via mise
-    #>
     param(
         [Parameter(Mandatory=$true)]
         [string]$Name,
@@ -232,11 +233,9 @@ function Install-Runtime {
     }
 }
 
+# Uninstall-Runtime <Name> [Version]
+# Uninstall a runtime via mise.
 function Uninstall-Runtime {
-    <#
-    .SYNOPSIS
-    Uninstall a runtime via mise
-    #>
     param(
         [Parameter(Mandatory=$true)]
         [string]$Name,

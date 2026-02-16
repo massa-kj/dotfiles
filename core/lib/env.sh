@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
-# Environment variable definitions
+# -----------------------------------------------------------------------------
+# Module: env
+#
+# Responsibility:
+#   Define environment variables for dotfiles framework.
+# -----------------------------------------------------------------------------
 
 # Root directory of dotfiles
 # Assumes this script is located at core/lib/env.sh

@@ -1,15 +1,30 @@
-# File system helpers
+# -----------------------------------------------------------------------------
+# Module: fs
+#
+# Responsibility:
+#   Provide file system operations for feature installation.
+#
+# Public API (Stable):
+#   Ensure-Directory <Path>
+#   Backup-File <Target>
+#   Backup-Directory <Target>
+#   New-FileLink <Feature> <Source> <Destination>
+#   New-DirectoryLink <Feature> <Source> <Destination>
+#   Copy-ConfigFile <Feature> <Source> <Destination>
+#   Remove-TrackedFiles <Feature>
+#   Get-HomePath
+#   Get-ConfigPath [AppName]
+#   Expand-HomeVariables <Path>
+# -----------------------------------------------------------------------------
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 # This library expects logger.ps1 and state.ps1 to be loaded by the caller.
 
+# Ensure-Directory <Path>
+# Create directory if it does not exist.
 function Ensure-Directory {
-    <#
-    .SYNOPSIS
-    Ensure directory exists
-    #>
     param(
         [Parameter(Mandatory=$true)]
         [string]$Path
@@ -20,11 +35,9 @@ function Ensure-Directory {
     }
 }
 
+# Backup-File <Target>
+# Backup existing file with timestamp if it exists and is not a symlink.
 function Backup-File {
-    <#
-    .SYNOPSIS
-    Backup existing file if it exists and is not a symlink
-    #>
     param(
         [Parameter(Mandatory=$true)]
         [string]$Target
@@ -39,11 +52,9 @@ function Backup-File {
     }
 }
 
+# Backup-Directory <Target>
+# Backup existing directory with timestamp if it exists and is not a symlink.
 function Backup-Directory {
-    <#
-    .SYNOPSIS
-    Backup existing directory if it exists and is not a symlink
-    #>
     param(
         [Parameter(Mandatory=$true)]
         [string]$Target
@@ -61,11 +72,9 @@ function Backup-Directory {
     }
 }
 
+# New-FileLink <Feature> <Source> <Destination>
+# Create symbolic link for file and register to state.
 function New-FileLink {
-    <#
-    .SYNOPSIS
-    Create symlink for file
-    #>
     param(
         [Parameter(Mandatory=$true)]
         [string]$Feature,
@@ -104,11 +113,9 @@ function New-FileLink {
     }
 }
 
+# New-DirectoryLink <Feature> <Source> <Destination>
+# Create symbolic link for directory and register to state.
 function New-DirectoryLink {
-    <#
-    .SYNOPSIS
-    Create symlink for directory
-    #>
     param(
         [Parameter(Mandatory=$true)]
         [string]$Feature,
@@ -147,11 +154,9 @@ function New-DirectoryLink {
     }
 }
 
+# Copy-ConfigFile <Feature> <Source> <Destination>
+# Copy configuration file instead of symlinking and register to state.
 function Copy-ConfigFile {
-    <#
-    .SYNOPSIS
-    Copy configuration file (instead of symlinking)
-    #>
     param(
         [Parameter(Mandatory=$true)]
         [string]$Feature,
@@ -185,11 +190,9 @@ function Copy-ConfigFile {
     }
 }
 
+# Remove-TrackedFiles <Feature>
+# Remove all files tracked by a feature from state.
 function Remove-TrackedFiles {
-    <#
-    .SYNOPSIS
-    Remove all files tracked by a feature
-    #>
     param(
         [Parameter(Mandatory=$true)]
         [string]$Feature
@@ -218,19 +221,15 @@ function Remove-TrackedFiles {
     }
 }
 
+# Get-HomePath
+# Get user home directory path.
 function Get-HomePath {
-    <#
-    .SYNOPSIS
-    Get user home directory path
-    #>
     return $env:USERPROFILE
 }
 
+# Get-ConfigPath [AppName]
+# Get configuration directory path (AppData/Local or .config equivalent).
 function Get-ConfigPath {
-    <#
-    .SYNOPSIS
-    Get configuration directory path (AppData/Local or .config equivalent)
-    #>
     param(
         [string]$AppName
     )
@@ -242,11 +241,9 @@ function Get-ConfigPath {
     return $env:LOCALAPPDATA
 }
 
+# Expand-HomeVariables <Path>
+# Expand ~/ to actual home path.
 function Expand-HomeVariables {
-    <#
-    .SYNOPSIS
-    Expand ~/ to actual home path
-    #>
     param(
         [Parameter(Mandatory=$true)]
         [string]$Path
