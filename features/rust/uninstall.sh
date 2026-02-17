@@ -30,8 +30,8 @@ for pkg in "${packages[@]}"; do
 
     if [[ "$pkg" == *"@"* ]]; then
         # Runtime package (rust@version or rust-analyzer@version)
-        local name="${pkg%%@*}"
-        local version="${pkg##*@}"
+        name="${pkg%%@*}"
+        version="${pkg##*@}"
         
         if has_runtime "$name" "$version"; then
             log_info "Removing runtime: $name@$version"

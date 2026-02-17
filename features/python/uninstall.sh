@@ -30,7 +30,7 @@ for pkg in "${packages[@]}"; do
 
     if [[ "$pkg" == "uv:"* ]]; then
         # uv package
-        local uv_pkg="${pkg#uv:}"
+        uv_pkg="${pkg#uv:}"
         if uv pip list 2>/dev/null | grep -q "$uv_pkg"; then
             log_info "Removing uv package: $uv_pkg"
             uv pip uninstall --system "$uv_pkg"
