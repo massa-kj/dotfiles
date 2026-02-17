@@ -16,9 +16,31 @@
 
 # This library expects core/env.sh and core/lib/logger.sh to be sourced by the caller.
 
+# Global variable to cache brew path
+_BREW_PATH=""
+
+# _ensure_brew_available
+# Ensure brew is available in PATH.
+_ensure_brew_available() {
+    # Already in PATH
+    if command -v brew >/dev/null 2>&1; then
+        return 0
+    fi
+    
+    # Check standard Linux installation location
+    if [[ -x "/home/linuxbrew/.linuxbrew/bin/brew" ]]; then
+        eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+        _BREW_PATH="/home/linuxbrew/.linuxbrew/bin/brew"
+        return 0
+    fi
+    
+    return 1
+}
+
 # Select package manager based on platform and availability
 _detect_package_manager() {
-    if command -v brew >/dev/null 2>&1; then
+    # Ensure brew is available if it exists
+    if _ensure_brew_available; then
         echo "brew"
         return 0
     fi
@@ -47,6 +69,7 @@ has_package() {
 
     case "$manager" in
         brew)
+            _ensure_brew_available
             brew list --formula --versions "$name" >/dev/null 2>&1
             return $?
             ;;
@@ -82,6 +105,7 @@ install_package() {
 
     case "$manager" in
         brew)
+            _ensure_brew_available
             brew install "$name"
             ;;
         apt)
@@ -122,6 +146,7 @@ remove_package() {
 
     case "$manager" in
         brew)
+            _ensure_brew_available
             brew uninstall "$name"
             ;;
         apt)
@@ -141,6 +166,35 @@ remove_package() {
     return 0
 }
 
+# _ensure_mise_available
+# Ensure mise is available in PATH.
+_ensure_mise_available() {
+    # Already in PATH
+    if command -v mise >/dev/null 2>&1; then
+        return 0
+    fi
+    
+    # Check common installation locations
+    local mise_paths=(
+        "$HOME/.local/bin/mise"
+        "/home/linuxbrew/.linuxbrew/bin/mise"
+        "/usr/local/bin/mise"
+    )
+    
+    for mise_path in "${mise_paths[@]}"; do
+        if [[ -x "$mise_path" ]]; then
+            # Add to PATH
+            export PATH="$(dirname "$mise_path"):$PATH"
+            
+            # Activate mise for current shell
+            eval "$("$mise_path" activate bash)"
+            return 0
+        fi
+    done
+    
+    return 1
+}
+
 # has_runtime <name> [version]
 # Check if a runtime is installed via mise.
 has_runtime() {
@@ -152,7 +206,7 @@ has_runtime() {
         return 1
     fi
 
-    if ! command -v mise >/dev/null 2>&1; then
+    if ! _ensure_mise_available; then
         log_error "mise is not available"
         return 1
     fi
@@ -177,7 +231,7 @@ install_runtime() {
         return 1
     fi
 
-    if ! command -v mise >/dev/null 2>&1; then
+    if ! _ensure_mise_available; then
         log_error "mise is not available"
         return 1
     fi
@@ -197,6 +251,23 @@ install_runtime() {
 
     log_info "Setting global runtime: $name@$version"
     mise use -g "$name@$version"
+    
+    # Ensure the newly installed runtime is available in current shell
+    # Get the bin directory for this runtime and add to PATH
+    local runtime_path
+    runtime_path=$(mise where "$name@$version" 2>/dev/null || true)
+    if [[ -n "$runtime_path" ]]; then
+        # Add runtime bin directory to PATH
+        if [[ -d "$runtime_path/bin" ]]; then
+            export PATH="$runtime_path/bin:$PATH"
+            log_info "Added $name@$version to PATH: $runtime_path/bin"
+        fi
+    fi
+    
+    # Re-activate mise to ensure all shims are updated
+    eval "$(mise activate bash)"
+    
+    return 0
 }
 
 # remove_runtime <name> [version]
@@ -210,7 +281,7 @@ remove_runtime() {
         return 1
     fi
 
-    if ! command -v mise >/dev/null 2>&1; then
+    if ! _ensure_mise_available; then
         log_error "mise is not available"
         return 1
     fi

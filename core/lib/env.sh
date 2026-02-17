@@ -12,7 +12,7 @@ DOTFILES_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 export DOTFILES_ROOT
 
 # Platform detection
-if [[ -n "${WSL_DISTRO_NAME}" ]]; then
+if [[ -n "${WSL_DISTRO_NAME:-}" ]]; then
     DOTFILES_PLATFORM="wsl"
 elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
     DOTFILES_PLATFORM="linux"
