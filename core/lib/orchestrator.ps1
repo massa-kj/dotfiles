@@ -57,8 +57,9 @@ function Read-Profile {
         }
         
         if ($featureList.Count -eq 0) {
-            Log-Error "No features found in profile"
-            return $null
+            Log-Warn "Empty profile (no features specified)"
+            Log-Info "All installed features will be uninstalled"
+            return @()
         }
         
         Log-Info "Desired features: $($featureList -join ' ')"

@@ -59,16 +59,17 @@ if [[ -f "$GITCONFIG_BASE" ]]; then
             log_warn ".gitconfig differs from expected. Creating backup..."
             backup_file "$GITCONFIG_TARGET"
             cp "$GITCONFIG_TEMP" "$GITCONFIG_TARGET"
-            state_add_file "$FEATURE_NAME" "$GITCONFIG_TARGET"
             log_success ".gitconfig updated"
         else
             log_info ".gitconfig is up-to-date"
         fi
     else
         cp "$GITCONFIG_TEMP" "$GITCONFIG_TARGET"
-        state_add_file "$FEATURE_NAME" "$GITCONFIG_TARGET"
         log_success ".gitconfig created"
     fi
+    
+    # Always register .gitconfig in state for uninstall tracking
+    state_add_file "$FEATURE_NAME" "$GITCONFIG_TARGET"
     
     rm -f "$GITCONFIG_TEMP"
 fi

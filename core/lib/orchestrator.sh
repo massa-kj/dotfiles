@@ -30,8 +30,9 @@ read_profile() {
     output_array=($(yq eval '.features[]' "$profile_file"))
     
     if [[ ${#output_array[@]} -eq 0 ]]; then
-        log_error "No features found in profile"
-        return 1
+        log_warn "Empty profile (no features specified)"
+        log_info "All installed features will be uninstalled"
+        return 0
     fi
     
     log_info "Desired features: ${output_array[*]}"

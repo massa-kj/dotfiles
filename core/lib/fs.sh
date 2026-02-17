@@ -136,11 +136,12 @@ remove_tracked_files() {
     log_info "Removing configuration files..."
     while IFS= read -r file; do
         if [[ -n "$file" ]]; then
-            if [[ -L "$file" ]]; then
-                log_info "Removing symlink: $file"
+            if [[ -L "$file" ]] || [[ -f "$file" ]]; then
+                log_info "Removing: $file"
                 rm -f "$file"
-            elif [[ -f "$file" ]] || [[ -d "$file" ]]; then
-                log_warn "Path is not a symlink, skipping: $file"
+            elif [[ -d "$file" ]]; then
+                log_info "Removing directory: $file"
+                rm -rf "$file"
             else
                 log_info "Path does not exist, skipping: $file"
             fi
