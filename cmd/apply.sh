@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# apply.sh
-# Entry point for applying dotfiles profiles
+# cmd/apply.sh
+# Apply command implementation
 
 set -euo pipefail
 
 # Load core libraries
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DOTFILES_ROOT="$SCRIPT_DIR"
+DOTFILES_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 source "$DOTFILES_ROOT/core/lib/env.sh"
 source "$DOTFILES_ROOT/core/lib/logger.sh"
@@ -18,7 +18,7 @@ source "$DOTFILES_ROOT/core/lib/orchestrator.sh"
 case "$DOTFILES_PLATFORM" in
   linux|wsl) ;;
   windows)
-    log_error "On Windows, run apply.ps1 instead."
+    log_error "On Windows, run dotfiles.ps1 instead."
     exit 1
     ;;
   *)
@@ -30,7 +30,7 @@ esac
 # Usage
 usage() {
     cat <<EOF
-Usage: $0 <profile.yaml>
+Usage: dotfiles apply <profile.yaml>
 
 Apply a dotfiles profile to the system.
 
@@ -38,8 +38,8 @@ Arguments:
   profile.yaml    Path to the profile file
 
 Examples:
-  $0 profiles/minimal.yaml
-  $0 profiles/dev.yaml
+  dotfiles apply profiles/minimal.yaml
+  dotfiles apply profiles/dev.yaml
 EOF
     exit 1
 }

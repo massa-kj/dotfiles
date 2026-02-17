@@ -32,7 +32,7 @@ git clone https://github.com/massa-kj/dotfiles.git ~/dotfiles
 cd ~/dotfiles
 
 ./platforms/wsl/bootstrap.sh
-./apply.sh profiles/wsl.yaml
+./dotfiles apply profiles/wsl.yaml
 ```
 
 > What gets installed by bootstrap:
@@ -49,7 +49,7 @@ cd $HOME\dotfiles
 Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 
 .\platforms\windows\bootstrap.ps1
-.\apply.ps1 profiles\windows.yaml
+.\dotfiles.ps1 apply profiles\windows.yaml
 ```
 
 Bootstrap installs only minimal execution dependencies.
@@ -77,7 +77,7 @@ features:
 Run:
 
 ```bash
-./apply.sh profiles/wsl.yaml
+./dotfiles apply profiles/wsl.yaml
 ```
 
 Profiles declare intent only.

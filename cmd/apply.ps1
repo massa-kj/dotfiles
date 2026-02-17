@@ -1,30 +1,30 @@
-# apply.ps1
-# Entry point for applying dotfiles profiles
+# cmd/apply.ps1
+# Apply command implementation
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 # Load core libraries
 $ScriptRoot = $PSScriptRoot
-$global:DOTFILES_ROOT = $ScriptRoot
+$global:DOTFILES_ROOT = (Get-Item "$ScriptRoot\..").FullName
 
-. "$ScriptRoot\core\lib\env.ps1"
-. "$ScriptRoot\core\lib\logger.ps1"
-. "$ScriptRoot\core\lib\state.ps1"
-. "$ScriptRoot\core\lib\resolver.ps1"
-. "$ScriptRoot\core\lib\orchestrator.ps1"
-. "$ScriptRoot\core\lib\runner.ps1"
+. "$global:DOTFILES_ROOT\core\lib\env.ps1"
+. "$global:DOTFILES_ROOT\core\lib\logger.ps1"
+. "$global:DOTFILES_ROOT\core\lib\state.ps1"
+. "$global:DOTFILES_ROOT\core\lib\resolver.ps1"
+. "$global:DOTFILES_ROOT\core\lib\orchestrator.ps1"
+. "$global:DOTFILES_ROOT\core\lib\runner.ps1"
 
 # Platform check
 if ($global:DOTFILES_PLATFORM -ne "windows") {
-    Log-Error "This script is for Windows only. On Linux/WSL, run apply.sh instead."
+    Log-Error "This script is for Windows only. On Linux/WSL, run dotfiles instead."
     exit 1
 }
 
 # Usage
 function Show-Usage {
     Write-Host @"
-Usage: .\apply.ps1 <profile.yaml>
+Usage: dotfiles.ps1 apply <profile.yaml>
 
 Apply a dotfiles profile to the system.
 
@@ -32,8 +32,8 @@ Arguments:
   profile.yaml    Path to the profile file
 
 Examples:
-  .\apply.ps1 profiles\minimal.yaml
-  .\apply.ps1 profiles\windows.yaml
+  dotfiles.ps1 apply profiles\minimal.yaml
+  dotfiles.ps1 apply profiles\windows.yaml
 "@
     exit 1
 }

@@ -210,7 +210,7 @@ Must NOT:
 
 Core exposes a limited API to:
 
-* apply.sh / apply.ps1
+* cmd/ orchestration commands (cmd/apply.sh, cmd/apply.ps1, etc.)
 * feature install/uninstall scripts (indirectly)
 
 Examples (conceptual):

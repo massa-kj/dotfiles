@@ -43,9 +43,9 @@ Architecture exists to enforce boundaries.
 The system is composed of five layers:
 
 ```
-platforms  →  profiles  →  apply  →  core  →  features
-                               ↓
-                             state
+platforms  →  profiles  →  dotfiles  →  cmd  →  core  →  features
+                                         ↓
+                                       state
 ```
 
 Each layer has strict responsibility constraints.
@@ -58,6 +58,11 @@ The logical architecture maps to the following directory structure:
 
 ```
 dotfiles/
+├── dotfiles            # Main CLI entry point (Linux/WSL)
+├── dotfiles.ps1        # Main CLI entry point (Windows)
+├── cmd/                # Orchestration layer commands
+│   ├── apply.sh        # Apply command implementation (Linux/WSL)
+│   └── apply.ps1       # Apply command implementation (Windows)
 ├── core/lib/           # Core libraries (bash & PowerShell)
 ├── features/           # Self-contained feature modules
 │   ├── git/
@@ -78,9 +83,7 @@ dotfiles/
 ├── state/              # Installation state (tracked)
 ├── docs/               # Documentation and guides
 ├── quality/            # Quality checks and linters
-├── tests/              # Logic and integration tests
-├── apply.sh            # Entry point (Linux/WSL)
-└── apply.ps1           # Entry point (Windows)
+└── tests/              # Logic and integration tests
 ```
 
 This structure enforces:
@@ -146,18 +149,23 @@ Not:
 
 > How should it be installed?
 
-### apply (Orchestration Layer)
+### cmd/ (Orchestration Layer)
 
-Entry point:
+Entry points:
 
-* apply.sh
-* apply.ps1
+* dotfiles / dotfiles.ps1 (dispatcher)
+* cmd/apply.sh / cmd/apply.ps1 (orchestration implementation)
 
 #### Purpose
 
 Coordinate execution flow.
 
-apply must remain a thin orchestration layer internally separated into:
+The orchestration layer consists of:
+
+* **dotfiles**: Thin CLI dispatcher that routes commands
+* **cmd/**: Command implementations that orchestrate using core
+
+Each command must remain a thin orchestration layer internally separated into:
 
 - resolution
 - diff computation
