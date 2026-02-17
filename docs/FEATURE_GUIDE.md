@@ -150,11 +150,24 @@ meta.yaml is declarative metadata — not configuration or code.
 
 For platform-specific dependencies, create:
 
+* `meta.linux.yaml`
 * `meta.wsl.yaml`
 * `meta.windows.yaml`
-* `meta.linux.yaml`
 
 These are merged with `meta.yaml` during resolution.
+
+#### Fallback Resolution
+
+The resolver applies platform-specific fallback logic:
+
+* **WSL**: `meta.wsl.yaml` → `meta.linux.yaml` → `meta.yaml`
+* **Linux**: `meta.linux.yaml` → `meta.yaml`
+* **Windows**: `meta.windows.yaml` → `meta.yaml`
+
+This allows:
+
+* Sharing common Linux/WSL configuration via `meta.linux.yaml`
+* WSL-specific overrides via `meta.wsl.yaml` when needed
 
 Example:
 
@@ -164,12 +177,10 @@ description: Neovim text editor with custom configuration
 depends:
   - git
 
-# meta.wsl.yaml (platform-specific)
+# meta.linux.yaml (Linux/WSL common)
 depends:
   - brew
 ```
-
-The resolver loads both files and merges dependencies.
 
 Platform-specific files must follow the same rules as `meta.yaml`.
 

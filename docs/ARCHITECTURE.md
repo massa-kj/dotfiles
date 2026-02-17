@@ -75,6 +75,7 @@ dotfiles/
 │   │   └── files/                # Configuration files
 │   └── ...
 ├── platforms/          # Platform-specific bootstrap
+│   ├── linux/
 │   ├── wsl/
 │   └── windows/
 ├── profiles/           # Declarative environment definitions

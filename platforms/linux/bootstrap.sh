@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Minimal setup for running dotfiles in a WSL environment
+# Minimal setup for running dotfiles in a Linux environment
 
 set -euo pipefail
 
@@ -27,12 +27,7 @@ DOTFILES_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 export DOTFILES_ROOT
 
 log_info "DOTFILES_ROOT: $DOTFILES_ROOT"
-log_info "Platform: WSL"
-
-# Check if running in WSL
-if [[ -z "${WSL_DISTRO_NAME:-}" ]]; then
-    log_warn "Not running in WSL environment, but continuing..."
-fi
+log_info "Platform: Linux"
 
 # Update apt cache
 log_step "Updating apt package cache..."
@@ -101,7 +96,7 @@ log_info "All dependencies installed successfully"
 log_step "Setting up environment..."
 cat > "$DOTFILES_ROOT/.env.bootstrap" <<EOF
 export DOTFILES_ROOT="$DOTFILES_ROOT"
-export DOTFILES_PLATFORM="wsl"
+export DOTFILES_PLATFORM="linux"
 EOF
 
 log_info "Bootstrap environment saved to .env.bootstrap"
@@ -110,6 +105,6 @@ echo ""
 log_step "Bootstrap complete!"
 echo ""
 echo "Next steps:"
-echo "  1. Review a profile: cat profiles/wsl.yaml"
-echo "  2. Apply a profile: ./dotfiles apply profiles/wsl.yaml"
+echo "  1. Review a profile: cat profiles/linux.yaml"
+echo "  2. Apply a profile: ./dotfiles apply profiles/linux.yaml"
 echo ""

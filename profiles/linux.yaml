@@ -1,0 +1,14 @@
+features:
+  - bash
+  - brew
+  - cli-tools
+  - git
+  - git-tools
+  - mise
+  - neovim
+  - tmux
+  
+  - lua
+  - node
+  - python
+  - rust
