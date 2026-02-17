@@ -28,7 +28,6 @@ read_feature_metadata() {
     log_info "Reading feature metadata..."
     for feature in "${features[@]}"; do
         local meta_file="$DOTFILES_FEATURES_DIR/$feature/meta.yaml"
-        local platform_meta_file="$DOTFILES_FEATURES_DIR/$feature/meta.${DOTFILES_PLATFORM}.yaml"
         
         if [[ ! -f "$meta_file" ]]; then
             log_error "Meta file not found: $meta_file"
@@ -38,8 +37,28 @@ read_feature_metadata() {
         # Read common dependencies
         local deps=($(yq eval '.depends[]' "$meta_file" 2>/dev/null || true))
         
-        # Read platform-specific dependencies if exists
-        if [[ -f "$platform_meta_file" ]]; then
+        # Read platform-specific dependencies with fallback
+        # Priority: wsl → linux → (none)
+        local platform_meta_file=""
+        if [[ "$DOTFILES_PLATFORM" == "wsl" ]]; then
+            if [[ -f "$DOTFILES_FEATURES_DIR/$feature/meta.wsl.yaml" ]]; then
+                platform_meta_file="$DOTFILES_FEATURES_DIR/$feature/meta.wsl.yaml"
+            elif [[ -f "$DOTFILES_FEATURES_DIR/$feature/meta.linux.yaml" ]]; then
+                platform_meta_file="$DOTFILES_FEATURES_DIR/$feature/meta.linux.yaml"
+            fi
+        elif [[ "$DOTFILES_PLATFORM" == "linux" ]]; then
+            if [[ -f "$DOTFILES_FEATURES_DIR/$feature/meta.linux.yaml" ]]; then
+                platform_meta_file="$DOTFILES_FEATURES_DIR/$feature/meta.linux.yaml"
+            fi
+        else
+            # For windows or other platforms, use direct platform file if exists
+            if [[ -f "$DOTFILES_FEATURES_DIR/$feature/meta.${DOTFILES_PLATFORM}.yaml" ]]; then
+                platform_meta_file="$DOTFILES_FEATURES_DIR/$feature/meta.${DOTFILES_PLATFORM}.yaml"
+            fi
+        fi
+        
+        # Merge platform-specific dependencies if found
+        if [[ -n "$platform_meta_file" ]]; then
             local platform_deps=($(yq eval '.depends[]' "$platform_meta_file" 2>/dev/null || true))
             deps+=("${platform_deps[@]}")
         fi
