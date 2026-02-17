@@ -58,6 +58,7 @@ The logical architecture maps to the following directory structure:
 
 ```
 dotfiles/
+├── .dockerignore       # Docker build exclusions (for quality/docker)
 ├── dotfiles            # Main CLI entry point (Linux/WSL)
 ├── dotfiles.ps1        # Main CLI entry point (Windows)
 ├── cmd/                # Orchestration layer commands
@@ -83,8 +84,13 @@ dotfiles/
 │   └── windows.yaml
 ├── state/              # Installation state (tracked)
 ├── docs/               # Documentation and guides
-├── quality/            # Quality checks and linters
-└── tests/              # Logic and integration tests
+├── quality/            # Quality assurance
+│   ├── docker/         # Docker-based integration tests
+│   │   ├── Dockerfile
+│   │   ├── test.sh
+│   │   └── scenarios/
+│   └── lint.sh
+└── tests/              # Unit and integration tests
 ```
 
 This structure enforces:
@@ -93,6 +99,10 @@ This structure enforces:
 * Feature independence through self-contained modules
 * Platform abstraction through bootstrap isolation
 * State authority through dedicated directory
+
+### Notes on File Placement
+
+**.dockerignore**: Located at repository root due to Docker's requirement that it be at the build context root. Used by `quality/docker/Dockerfile` for integration testing.
 
 ## Layer Responsibilities
 
