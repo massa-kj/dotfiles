@@ -78,13 +78,36 @@ if (-not $sortedFeatures) {
 # Calculate diff
 $diff = Get-FeatureDiff -SortedFeatures $sortedFeatures
 
-# Execute uninstall and install
+# Execute in order:
+# 1. Uninstall removed features
+# 2. Uninstall features to reinstall (for version change)
+# 3. Install new features
+# 4. Install reinstalled features (with new version)
+
+# Uninstall removed features
 if (-not (Invoke-Uninstall -Features $diff.ToUninstall)) {
     exit 1
 }
 
+# Uninstall features that need reinstall (version mismatch)
+if ($diff.ToReinstall.Count -gt 0) {
+    Log-Task "Preparing features for reinstall..."
+    if (-not (Invoke-Uninstall -Features $diff.ToReinstall)) {
+        exit 1
+    }
+}
+
+# Install new features
 if (-not (Invoke-Install -Features $diff.ToInstall)) {
     exit 1
+}
+
+# Reinstall features with new version
+if ($diff.ToReinstall.Count -gt 0) {
+    Log-Task "Reinstalling features with version updates..."
+    if (-not (Invoke-Install -Features $diff.ToReinstall)) {
+        exit 1
+    }
 }
 
 # Print summary

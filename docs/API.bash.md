@@ -127,4 +127,13 @@ Manage state file operations safely with atomic updates.
 - **`state_list_features`**  
   Retrieve all installed feature names (one per line).
 
+- **`state_set_runtime <feature> <key> <value>`**  
+  Set runtime metadata for a feature.
+
+- **`state_get_runtime <feature> <key>`**  
+  Get runtime metadata for a feature.
+
+- **`state_has_runtime <feature> <key>`**  
+  Check if runtime metadata exists for a feature.
+
 

@@ -355,6 +355,50 @@ Avoid:
 
 The feature name becomes part of state identity.
 
+## Version Handling
+
+Features can support version specification through profile configuration.
+
+### Reading Version from Profile
+
+Features receive configuration via the `DOTFILES_FEATURE_CONFIG_VERSION` environment variable during installation.
+
+### Recording Version in State
+
+After successful installation, record the version in state using `state_set_runtime` / `State-SetRuntime` API.
+
+### When to Use Version
+
+Version specification is most useful for:
+
+* **Runtime environments**: node, python, rust, lua
+* **Tools with breaking changes**: neovim, tmux
+* **Version-sensitive workflows**: CI/CD, team consistency
+
+Not recommended for:
+
+* Configuration-only features (git, bash)
+* System packages without version management
+* Features using package managers without version support
+
+### Version Mismatch Behavior
+
+When a feature's version in the profile differs from the installed version in state:
+
+1. Orchestrator detects version mismatch
+2. Feature is added to reinstall list
+3. Uninstall runs (removes old version)
+4. Install runs (installs new version)
+
+This ensures clean version transitions.
+
+### Version Handling Rules
+
+1. **Core is version-agnostic**: Dependency resolution ignores versions
+2. **Features interpret versions**: Core only passes the string
+3. **Optional field**: Features work without version support
+4. **State records effects**: Version is recorded as installed, not desired
+
 ## Platform Differences
 
 If platform-specific logic is required:

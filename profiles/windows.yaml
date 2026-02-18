@@ -1,16 +1,16 @@
 features:
-  - caps2ctrl
-  - cli-tools
-  - git
-  - git-tools
-  - mise
-  - neovim
-  - powershell
-  - scoop
-  - vcredist
-  # - vscode
-  
-  # - lua
-  # - node
-  # - python
-  # - rust
+  caps2ctrl: {}
+  cli-tools: {}
+  git: {}
+  git-tools: {}
+  mise: {}
+  neovim: {}
+  powershell: {}
+  scoop: {}
+  vcredist: {}
+  # vscode: {}
+
+  # lua: {}
+  # node: {}
+  # python: {}
+  # rust: {}

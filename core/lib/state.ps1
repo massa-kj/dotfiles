@@ -13,6 +13,9 @@
 #   State-GetFiles <Feature>
 #   State-RemoveFeature <Feature>
 #   State-ListFeatures
+#   State-SetRuntime <Feature> <Key> <Value>
+#   State-GetRuntime <Feature> <Key>
+#   State-HasRuntime <Feature> <Key>
 # -----------------------------------------------------------------------------
 
 Set-StrictMode -Version Latest
@@ -204,4 +207,93 @@ function State-ListFeatures {
 
     $state = Get-Content -Path $global:DOTFILES_STATE_FILE -Raw | ConvertFrom-Json
     return @($state.features.PSObject.Properties | ForEach-Object { $_.Name })
+}
+
+# State-SetRuntime <Feature> <Key> <Value>
+# Set runtime metadata for a feature.
+function State-SetRuntime {
+    param(
+        [Parameter(Mandatory=$true)]
+        [string]$Feature,
+        [Parameter(Mandatory=$true)]
+        [string]$Key,
+        [Parameter(Mandatory=$true)]
+        [string]$Value
+    )
+
+    $state = Get-Content -Path $global:DOTFILES_STATE_FILE -Raw | ConvertFrom-Json
+
+    # Initialize feature if it doesn't exist
+    if (-not $state.features.PSObject.Properties[$Feature]) {
+        $state.features | Add-Member -MemberType NoteProperty -Name $Feature -Value @{
+            packages = @()
+            files = @()
+        }
+    }
+
+    # Initialize runtime object if it doesn't exist
+    if (-not $state.features.$Feature.PSObject.Properties['runtime']) {
+        $state.features.$Feature | Add-Member -MemberType NoteProperty -Name runtime -Value @{}
+    }
+
+    # Set runtime metadata
+    if ($state.features.$Feature.runtime.PSObject.Properties[$Key]) {
+        $state.features.$Feature.runtime.$Key = $Value
+    } else {
+        $state.features.$Feature.runtime | Add-Member -MemberType NoteProperty -Name $Key -Value $Value
+    }
+
+    # Save state
+    try {
+        $state | ConvertTo-Json -Depth 10 | Set-Content -Path $global:DOTFILES_STATE_FILE -Encoding UTF8
+        return $true
+    } catch {
+        Log-Error "State-SetRuntime: failed to set runtime metadata - $_"
+        return $false
+    }
+}
+
+# State-GetRuntime <Feature> <Key>
+# Get runtime metadata for a feature.
+function State-GetRuntime {
+    param(
+        [Parameter(Mandatory=$true)]
+        [string]$Feature,
+        [Parameter(Mandatory=$true)]
+        [string]$Key
+    )
+
+    if (-not (State-HasFeature -Feature $Feature)) {
+        return $null
+    }
+
+    $state = Get-Content -Path $global:DOTFILES_STATE_FILE -Raw | ConvertFrom-Json
+    
+    # Safe access with null fallback
+    if ($state.features.$Feature.PSObject.Properties['runtime'] -and 
+        $state.features.$Feature.runtime.PSObject.Properties[$Key]) {
+        return $state.features.$Feature.runtime.$Key
+    }
+    
+    return $null
+}
+
+# State-HasRuntime <Feature> <Key>
+# Check if runtime metadata exists for a feature.
+function State-HasRuntime {
+    param(
+        [Parameter(Mandatory=$true)]
+        [string]$Feature,
+        [Parameter(Mandatory=$true)]
+        [string]$Key
+    )
+
+    if (-not (State-HasFeature -Feature $Feature)) {
+        return $false
+    }
+
+    $state = Get-Content -Path $global:DOTFILES_STATE_FILE -Raw | ConvertFrom-Json
+    
+    return ($state.features.$Feature.PSObject.Properties['runtime'] -and 
+            $state.features.$Feature.runtime.PSObject.Properties[$Key])
 }

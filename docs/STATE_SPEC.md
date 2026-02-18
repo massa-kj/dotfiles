@@ -101,6 +101,40 @@ Absolute paths of files or symlinks created during install.
 
 Only these paths may be removed during uninstall.
 
+#### `runtime` (object, optional)
+
+Runtime metadata for the feature.
+
+Used to track version information and other runtime state.
+
+**Fields**:
+* `version` (string, optional): Installed version of the feature
+
+**Example**:
+```json
+{
+  "version": 1,
+  "features": {
+    "node": {
+      "packages": ["node@20"],
+      "files": [],
+      "runtime": {
+        "version": "20"
+      }
+    },
+    "git": {
+      "packages": ["git"],
+      "files": ["/home/user/.gitconfig"]
+    }
+  }
+}
+```
+
+**Backward Compatibility**:
+* Runtime field is optional
+* Features without runtime metadata remain valid
+* State version remains 1 (backward-compatible extension)
+
 ### Schema Constraints
 
 * No nested objects beyond defined structure.

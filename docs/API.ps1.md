@@ -154,4 +154,13 @@ Manage state file operations safely with atomic updates.
 - **`State-ListFeatures`**  
   Retrieve all installed feature names.
 
+- **`State-SetRuntime <Feature> <Key> <Value>`**  
+  Set runtime metadata for a feature.
+
+- **`State-GetRuntime <Feature> <Key>`**  
+  Get runtime metadata for a feature.
+
+- **`State-HasRuntime <Feature> <Key>`**  
+  Check if runtime metadata exists for a feature.
+
 

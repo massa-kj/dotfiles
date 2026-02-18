@@ -374,6 +374,78 @@ The architecture must allow:
 If extension requires modifying multiple layers simultaneously,
 the layering model is being violated.
 
+## Feature Versioning
+
+Profiles support optional version specification for features.
+
+### Profile Format
+
+Features are declared as a map with optional configuration:
+
+```yaml
+features:
+  git: {}
+  neovim:
+    version: "0.10.0"
+  node:
+    version: "20"
+```
+
+The map format enables:
+
+* Version specification per feature
+* Future configuration options
+* Extensibility without schema changes
+
+### Version-Aware Orchestration
+
+The orchestrator detects version mismatches and triggers reinstallation:
+
+1. Load profile with feature configurations
+2. Compare desired versions with installed versions (from state)
+3. Generate three action lists:
+   * **Install**: New features not in state
+   * **Uninstall**: Features removed from profile
+   * **Reinstall**: Features with version mismatch
+
+Execution order:
+
+```
+1. Uninstall removed features
+2. Uninstall features to reinstall
+3. Install new features
+4. Install reinstalled features (with new version)
+```
+
+### Reinstall Logic
+
+Current implementation:
+
+```
+version mismatch → uninstall → install
+```
+
+This guarantees clean state transitions.
+
+Future enhancement path:
+
+```bash
+# Optional upgrade script
+features/node/upgrade.sh
+```
+
+If `upgrade.sh` exists, orchestrator will prefer it over reinstall.
+This allows features to implement efficient version upgrades.
+
+### Version Handling Rules
+
+* Version resolution is **version-agnostic** (dependency order only)
+* Version is passed to features via `DOTFILES_FEATURE_CONFIG_VERSION`
+* Features interpret version semantics (core does not)
+* Version recorded in state as runtime metadata (optional)
+* Empty map `{}` is equivalent to no configuration
+* Features without version support ignore `DOTFILES_FEATURE_CONFIG_VERSION`
+
 ## Compatibility Expectations
 
 Backward compatibility must preserve:

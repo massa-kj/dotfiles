@@ -14,6 +14,9 @@
 #   state_get_files <feature>
 #   state_remove_feature <feature>
 #   state_list_features
+#   state_set_runtime <feature> <key> <value>
+#   state_get_runtime <feature> <key>
+#   state_has_runtime <feature> <key>
 # -----------------------------------------------------------------------------
 
 # state_init
@@ -191,4 +194,82 @@ state_list_features() {
     fi
 
     jq -r '.features | keys[]' "$DOTFILES_STATE_FILE" 2>/dev/null
+}
+
+# state_set_runtime <feature> <key> <value>
+# Set runtime metadata for a feature.
+state_set_runtime() {
+    local feature="$1"
+    local key="$2"
+    local value="$3"
+
+    if [[ -z "$feature" ]] || [[ -z "$key" ]]; then
+        log_error "state_set_runtime: feature and key are required"
+        return 1
+    fi
+
+    local tmp_file="${DOTFILES_STATE_FILE}.tmp"
+
+    # Initialize feature if it doesn't exist
+    if ! state_has_feature "$feature"; then
+        jq ".features[\"$feature\"] = {\"packages\": [], \"files\": []}" \
+            "$DOTFILES_STATE_FILE" > "$tmp_file"
+        mv "$tmp_file" "$DOTFILES_STATE_FILE"
+    fi
+
+    # Initialize runtime object if it doesn't exist
+    if ! jq -e ".features[\"$feature\"].runtime" "$DOTFILES_STATE_FILE" >/dev/null 2>&1; then
+        jq ".features[\"$feature\"].runtime = {}" \
+            "$DOTFILES_STATE_FILE" > "$tmp_file"
+        mv "$tmp_file" "$DOTFILES_STATE_FILE"
+    fi
+
+    # Set runtime metadata
+    jq ".features[\"$feature\"].runtime[\"$key\"] = \"$value\"" \
+        "$DOTFILES_STATE_FILE" > "$tmp_file"
+    
+    if [[ $? -ne 0 ]]; then
+        log_error "state_set_runtime: failed to set runtime metadata"
+        rm -f "$tmp_file"
+        return 1
+    fi
+
+    mv "$tmp_file" "$DOTFILES_STATE_FILE"
+}
+
+# state_get_runtime <feature> <key>
+# Get runtime metadata for a feature.
+state_get_runtime() {
+    local feature="$1"
+    local key="$2"
+
+    if [[ -z "$feature" ]] || [[ -z "$key" ]]; then
+        log_error "state_get_runtime: feature and key are required"
+        return 1
+    fi
+
+    if ! state_has_feature "$feature"; then
+        return 0
+    fi
+
+    # Safe access with empty fallback
+    jq -r ".features[\"$feature\"].runtime.\"$key\" // empty" "$DOTFILES_STATE_FILE" 2>/dev/null
+}
+
+# state_has_runtime <feature> <key>
+# Check if runtime metadata exists for a feature.
+state_has_runtime() {
+    local feature="$1"
+    local key="$2"
+
+    if [[ -z "$feature" ]] || [[ -z "$key" ]]; then
+        log_error "state_has_runtime: feature and key are required"
+        return 1
+    fi
+
+    if ! state_has_feature "$feature"; then
+        return 1
+    fi
+
+    jq -e ".features[\"$feature\"].runtime.\"$key\" != null" "$DOTFILES_STATE_FILE" >/dev/null 2>&1
 }

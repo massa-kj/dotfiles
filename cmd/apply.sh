@@ -69,11 +69,32 @@ resolve_dependencies DESIRED_FEATURES SORTED_FEATURES || exit 1
 # Calculate diff
 FEATURES_TO_INSTALL=()
 FEATURES_TO_UNINSTALL=()
-calculate_diff SORTED_FEATURES FEATURES_TO_INSTALL FEATURES_TO_UNINSTALL
+FEATURES_TO_REINSTALL=()
+calculate_diff SORTED_FEATURES FEATURES_TO_INSTALL FEATURES_TO_UNINSTALL FEATURES_TO_REINSTALL
 
-# Execute uninstall and install
+# Execute in order:
+# 1. Uninstall removed features
+# 2. Uninstall features to reinstall (for version change)
+# 3. Install new features
+# 4. Install reinstalled features (with new version)
+
+# Uninstall removed features
 run_uninstall FEATURES_TO_UNINSTALL || exit 1
+
+# Uninstall features that need reinstall (version mismatch)
+if [[ ${#FEATURES_TO_REINSTALL[@]} -gt 0 ]]; then
+    log_task "Preparing features for reinstall..."
+    run_uninstall FEATURES_TO_REINSTALL || exit 1
+fi
+
+# Install new features
 run_install FEATURES_TO_INSTALL || exit 1
+
+# Reinstall features with new version
+if [[ ${#FEATURES_TO_REINSTALL[@]} -gt 0 ]]; then
+    log_task "Reinstalling features with version updates..."
+    run_install FEATURES_TO_REINSTALL || exit 1
+fi
 
 # Print summary
 print_summary

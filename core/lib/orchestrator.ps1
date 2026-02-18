@@ -17,8 +17,11 @@ $ErrorActionPreference = "Stop"
 
 # This library expects env.ps1, logger.ps1, and state.ps1 to be loaded by the caller.
 
+# Global variable to cache profile data
+$script:ProfileData = ""
+
 # Read-Profile <ProfileFile>
-# Read profile YAML file and extract feature list.
+# Read profile YAML file and extract feature names from map.
 function Read-Profile {
     param(
         [Parameter(Mandatory=$true)]
@@ -33,27 +36,20 @@ function Read-Profile {
     Log-Info "Reading profile..."
     
     try {
-        # Try using yq if available
+        # Cache full profile data for later config extraction
+        $script:ProfileData = Get-Content $ProfileFile -Raw
+        
+        # Extract feature names (keys from features map)
         if (Get-Command yq -ErrorAction SilentlyContinue) {
-            $features = & yq eval '.features[]' $ProfileFile 2>$null
+            $features = & yq eval '.features | keys | .[]' $ProfileFile 2>$null
             if ($LASTEXITCODE -eq 0 -and $features) {
                 $featureList = @($features -split "`n" | Where-Object { $_ })
             } else {
                 $featureList = @()
             }
         } else {
-            # Fallback: simple YAML parsing
-            $content = Get-Content $ProfileFile -Raw
-            if ($content -match 'features:\s*\n((?:\s+-\s+.+\n?)*)') {
-                $featuresText = $matches[1]
-                $featureList = @($featuresText -split "`n" | ForEach-Object {
-                    if ($_ -match '^\s+-\s+(.+)$') {
-                        $matches[1].Trim()
-                    }
-                } | Where-Object { $_ })
-            } else {
-                $featureList = @()
-            }
+            Log-Error "yq command not found. Please install yq."
+            return $null
         }
         
         if ($featureList.Count -eq 0) {
@@ -70,8 +66,67 @@ function Read-Profile {
     }
 }
 
+# Get-FeatureConfig <Feature>
+# Extract configuration for a specific feature from cached profile data.
+function Get-FeatureConfig {
+    param(
+        [Parameter(Mandatory=$true)]
+        [string]$Feature
+    )
+    
+    if (-not $script:ProfileData) {
+        return $null
+    }
+    
+    try {
+        # Extract config for the feature (returns {} if empty or null)
+        $config = $script:ProfileData | & yq eval ".features.${Feature}" -o=json - 2>$null
+        if ($LASTEXITCODE -eq 0 -and $config) {
+            return ($config | ConvertFrom-Json)
+        }
+    } catch {
+        # Ignore errors, return null
+    }
+    
+    return $null
+}
+
+# Test-VersionMismatch <Feature>
+# Check if desired version differs from installed version.
+# Returns: $true if mismatch, $false if match/no-version.
+function Test-VersionMismatch {
+    param(
+        [Parameter(Mandatory=$true)]
+        [string]$Feature
+    )
+    
+    # Get desired version from profile
+    $featureConfig = Get-FeatureConfig -Feature $Feature
+    $desiredVersion = $null
+    if ($featureConfig -and $featureConfig.version) {
+        $desiredVersion = $featureConfig.version
+    }
+    
+    # If no version specified in profile, no mismatch
+    if (-not $desiredVersion) {
+        return $false
+    }
+    
+    # Get installed version from state
+    $installedVersion = State-GetRuntime -Feature $Feature -Key "version"
+    
+    # If no installed version recorded, it's a mismatch
+    if (-not $installedVersion) {
+        return $true
+    }
+    
+    # Compare versions
+    return ($desiredVersion -ne $installedVersion)
+}
+
 # Get-FeatureDiff <SortedFeatures>
 # Calculate difference between desired and installed features.
+# Includes version mismatch detection for reinstall.
 function Get-FeatureDiff {
     param(
         [Parameter(Mandatory=$true)]
@@ -82,11 +137,16 @@ function Get-FeatureDiff {
     
     $toInstall = @()
     $toUninstall = @()
+    $toReinstall = @()
     
-    # Find features to install
+    # Find features to install or reinstall
     foreach ($feature in $SortedFeatures) {
         if (-not (State-HasFeature -Feature $feature)) {
             $toInstall += $feature
+        } elseif (Test-VersionMismatch -Feature $feature) {
+            # Version mismatch detected
+            Log-Info "Version mismatch detected for: $feature"
+            $toReinstall += $feature
         }
     }
     
@@ -99,13 +159,16 @@ function Get-FeatureDiff {
     
     $toInstallStr = if ($toInstall.Count -gt 0) { $toInstall -join ' ' } else { 'none' }
     $toUninstallStr = if ($toUninstall.Count -gt 0) { $toUninstall -join ' ' } else { 'none' }
+    $toReinstallStr = if ($toReinstall.Count -gt 0) { $toReinstall -join ' ' } else { 'none' }
     
     Log-Info "Features to install: $toInstallStr"
     Log-Info "Features to uninstall: $toUninstallStr"
+    Log-Info "Features to reinstall: $toReinstallStr"
     
     return @{
         ToInstall = $toInstall
         ToUninstall = $toUninstall
+        ToReinstall = $toReinstall
     }
 }
 
@@ -173,7 +236,20 @@ function Invoke-Install {
             return $false
         }
         
+        # Extract feature config and pass via environment variable
+        $featureConfig = Get-FeatureConfig -Feature $feature
+        $featureVersion = $null
+        if ($featureConfig -and $featureConfig.version) {
+            $featureVersion = $featureConfig.version
+        }
+        
         Log-Info "Installing: $feature"
+        
+        # Export config for install script to use
+        if ($featureVersion) {
+            $env:DOTFILES_FEATURE_CONFIG_VERSION = $featureVersion
+        }
+        
         try {
             & $installScript
             if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne $null) {
@@ -182,6 +258,11 @@ function Invoke-Install {
         } catch {
             Log-Error "Failed to install: $feature - $_"
             return $false
+        } finally {
+            # Clear env var after install
+            if ($env:DOTFILES_FEATURE_CONFIG_VERSION) {
+                Remove-Item Env:\DOTFILES_FEATURE_CONFIG_VERSION -ErrorAction SilentlyContinue
+            }
         }
     }
     
