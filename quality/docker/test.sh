@@ -39,15 +39,19 @@ Commands:
   minimal            Run minimal scenario
   idempotent         Run idempotent scenario
   uninstall          Run uninstall scenario
+  version-install    Run version install scenario
+  version-upgrade    Run version upgrade scenario
+  version-mixed      Run version mixed scenario
   all                Run all scenarios (default)
   shell              Open interactive shell in container
   clean              Remove test image
 
 Examples:
-  $(basename "$0") minimal      # Run minimal test only
-  $(basename "$0") uninstall    # Run uninstall test only
-  $(basename "$0") build        # Build image only
-  $(basename "$0") shell        # Open shell for manual testing
+  $(basename "$0") minimal           # Run minimal test only
+  $(basename "$0") uninstall         # Run uninstall test only
+  $(basename "$0") version-upgrade   # Run version upgrade test
+  $(basename "$0") build             # Build image only
+  $(basename "$0") shell             # Open shell for manual testing
 
 EOF
     exit "$exit_code"
@@ -119,11 +123,26 @@ case "$COMMAND" in
         build_image
         run_scenario "uninstall"
         ;;
+    version-install)
+        build_image
+        run_scenario "version_install"
+        ;;
+    version-upgrade)
+        build_image
+        run_scenario "version_upgrade"
+        ;;
+    version-mixed)
+        build_image
+        run_scenario "version_mixed"
+        ;;
     all)
         build_image
         # run_scenario "minimal"
         run_scenario "idempotent"
         run_scenario "uninstall"
+        run_scenario "version_install"
+        run_scenario "version_upgrade"
+        run_scenario "version_mixed"
         log_step "All tests passed!"
         ;;
     shell)

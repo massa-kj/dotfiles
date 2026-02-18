@@ -61,6 +61,30 @@ Verifies safe removal:
 * Uninstall is idempotent
 * No destructive operations outside state authority
 
+### version_install.sh
+
+Verifies version specification installation:
+
+* Features with version configuration are installed correctly
+* Version is recorded in state runtime metadata
+* Packages include version information
+
+### version_mixed.sh
+
+Verifies mixed version/no-version features:
+
+* Features with version specification record version in state
+* Features without version specification do not record version
+* Both types coexist correctly
+
+### version_upgrade.sh
+
+Verifies version change behavior:
+
+* Version mismatch triggers reinstall
+* Old version is removed before new installation
+* State is updated with new version and package
+
 ## Quick Start
 
 ### Run all tests
@@ -74,6 +98,9 @@ This will:
 2. Run minimal scenario
 3. Run idempotent scenario
 4. Run uninstall scenario
+5. Run version_install scenario
+6. Run version_mixed scenario
+7. Run version_upgrade scenario
 
 ### Run specific test
 
@@ -81,6 +108,9 @@ This will:
 ./quality/docker/test.sh minimal
 ./quality/docker/test.sh idempotent
 ./quality/docker/test.sh uninstall
+./quality/docker/test.sh version-install
+./quality/docker/test.sh version-mixed
+./quality/docker/test.sh version-upgrade
 ```
 
 ### Build image only
@@ -166,7 +196,10 @@ quality/docker/
 └── scenarios/           # Test scenarios
     ├── minimal.sh       # Basic execution test
     ├── idempotent.sh    # Determinism test
-    └── uninstall.sh     # Safe removal test
+    ├── uninstall.sh     # Safe removal test
+    ├── version_install.sh   # Version specification test
+    ├── version_mixed.sh     # Mixed version/no-version test
+    └── version_upgrade.sh   # Version change test
 
 # Note: .dockerignore is in the repository root
 # (Docker requires it at the build context root)

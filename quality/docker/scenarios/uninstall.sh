@@ -42,8 +42,8 @@ echo "==> Test 1: Partial uninstall"
 echo "==> Creating partial profile (keeping bash and git only)"
 cat > "$PROFILE_PARTIAL" <<EOF
 features:
-  - bash
-  - git
+  bash: {}
+  git: {}
 EOF
 
 echo "==> Running apply with partial profile"
@@ -86,7 +86,7 @@ echo ""
 echo "==> Test 2: Full uninstall"
 echo "==> Creating empty profile"
 cat > "$PROFILE_EMPTY" <<EOF
-features: []
+features: {}
 EOF
 
 echo "==> Running apply with empty profile (full uninstall)"

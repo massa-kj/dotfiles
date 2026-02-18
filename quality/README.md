@@ -2,6 +2,18 @@
 
 Development tools for maintaining code quality and documentation consistency.
 
+## Test Suites
+
+### Docker-based Integration Tests
+
+See [docker/README.md](docker/README.md) for Docker-based integration testing.
+
+Tests verify state guarantees in isolated environments:
+- Basic execution (minimal)
+- Idempotent behavior
+- Safe uninstall
+- Version specification features
+
 ## Scripts
 
 ### gen_api_md.py
@@ -41,7 +53,7 @@ function_name() {
 
 ### lint.sh
 
-Runs code quality checks on Neovim configuration.
+Runs code quality checks on profiles and Neovim configuration.
 
 **Usage:**
 
@@ -51,8 +63,11 @@ bash quality/lint.sh
 
 **Checks:**
 
-- `stylua` - Lua code formatting
-- `luacheck` - Lua static analysis
+- Profile format validation (YAML syntax and schema)
+  - Ensures `features` is a map (not array)
+  - Validates feature entries are maps or null
+- `stylua` - Lua code formatting (Neovim config)
+- `luacheck` - Lua static analysis (Neovim config)
 
 ## Adding New Tools
 
