@@ -22,18 +22,22 @@ if (-not (State-Init)) {
     exit 1
 }
 
+# Read version from profile (default: latest)
+$Version = if ($env:DOTFILES_FEATURE_CONFIG_VERSION) { $env:DOTFILES_FEATURE_CONFIG_VERSION } else { "latest" }
+
 # Install Python via mise
-if (Test-Runtime -Name "python" -Version "3.12") {
-    Log-Info "python@3.12 is already installed"
+if (Test-Runtime -Name "python" -Version $Version) {
+    Log-Info "python@$Version is already installed"
 } else {
-    Log-Info "Installing python@3.12 via mise..."
-    if (-not (Install-Runtime -Name "python" -Version "3.12")) {
-        Log-Error "Failed to install python@3.12"
+    Log-Info "Installing python@$Version via mise..."
+    if (-not (Install-Runtime -Name "python" -Version $Version)) {
+        Log-Error "Failed to install python@$Version"
         exit 1
     }
-    Log-Success "python@3.12 installed"
+    Log-Success "python@$Version installed"
 }
-State-AddPackage -Feature $FeatureName -Package "python@3.12"
+State-AddPackage -Feature $FeatureName -Package "python@$Version"
+State-SetRuntime -Feature $FeatureName -Key "version" -Value $Version
 
 # Install uv via mise
 if (Test-Runtime -Name "uv" -Version "latest") {

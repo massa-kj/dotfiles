@@ -19,15 +19,19 @@ log_task "Installing feature: $FEATURE_NAME"
 # Ensure state is initialized
 state_init
 
+# Read version from profile (default: latest)
+VERSION="${DOTFILES_FEATURE_CONFIG_VERSION:-latest}"
+
 # Install Rust via mise
-if has_runtime "rust" "1.87.0"; then
-    log_info "rust@1.87.0 is already installed"
+if has_runtime "rust" "$VERSION"; then
+    log_info "rust@$VERSION is already installed"
 else
-    log_info "Installing rust@1.87.0 via mise..."
-    install_runtime "rust" "1.87.0"
-    log_success "rust@1.87.0 installed"
+    log_info "Installing rust@$VERSION via mise..."
+    install_runtime "rust" "$VERSION"
+    log_success "rust@$VERSION installed"
 fi
-state_add_package "$FEATURE_NAME" "rust@1.87.0"
+state_add_package "$FEATURE_NAME" "rust@$VERSION"
+state_set_runtime "$FEATURE_NAME" "version" "$VERSION"
 
 # Install rust-analyzer via mise
 if has_runtime "rust-analyzer" "2025-05-26"; then

@@ -19,15 +19,19 @@ log_task "Installing feature: $FEATURE_NAME"
 # Ensure state is initialized
 state_init
 
+# Read version from profile (default: latest)
+VERSION="${DOTFILES_FEATURE_CONFIG_VERSION:-latest}"
+
 # Install Python via mise
-if has_runtime "python" "3.12"; then
-    log_info "python@3.12 is already installed"
+if has_runtime "python" "$VERSION"; then
+    log_info "python@$VERSION is already installed"
 else
-    log_info "Installing python@3.12 via mise..."
-    install_runtime "python" "3.12"
-    log_success "python@3.12 installed"
+    log_info "Installing python@$VERSION via mise..."
+    install_runtime "python" "$VERSION"
+    log_success "python@$VERSION installed"
 fi
-state_add_package "$FEATURE_NAME" "python@3.12"
+state_add_package "$FEATURE_NAME" "python@$VERSION"
+state_set_runtime "$FEATURE_NAME" "version" "$VERSION"
 
 # Install uv via mise
 if has_runtime "uv" "latest"; then

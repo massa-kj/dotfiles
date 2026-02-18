@@ -11,6 +11,9 @@ features:
   # vscode: {}
 
   # lua: {}
-  # node: {}
-  # python: {}
-  # rust: {}
+  # node:
+  #   version: "22.17.1"
+  # python:
+  #   version: "3.12"
+  # rust:
+  #   version: "1.87"

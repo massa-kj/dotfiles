@@ -19,15 +19,22 @@ log_task "Installing feature: $FEATURE_NAME"
 # Ensure state is initialized
 state_init
 
+# Read version from profile config (fallback to latest)
+VERSION="${DOTFILES_FEATURE_CONFIG_VERSION:-latest}"
+log_info "Target Node.js version: $VERSION"
+
 # Install Node.js via mise
-if has_runtime "node" "22.17.1"; then
-    log_info "node@22.17.1 is already installed"
+if has_runtime "node" "$VERSION"; then
+    log_info "node@$VERSION is already installed"
 else
-    log_info "Installing node@22.17.1 via mise..."
-    install_runtime "node" "22.17.1"
-    log_success "node@22.17.1 installed"
+    log_info "Installing node@$VERSION via mise..."
+    install_runtime "node" "$VERSION"
+    log_success "node@$VERSION installed"
 fi
-state_add_package "$FEATURE_NAME" "node@22.17.1"
+state_add_package "$FEATURE_NAME" "node@$VERSION"
+
+# Record version in state
+state_set_runtime "$FEATURE_NAME" "version" "$VERSION"
 
 # Install npm packages
 declare -a npm_packages=(

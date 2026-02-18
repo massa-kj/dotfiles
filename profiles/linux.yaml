@@ -11,5 +11,7 @@ features:
   lua: {}
   node:
     version: "22.17.1"
-  python: {}
-  rust: {}
+  python:
+    version: "3.12"
+  rust:
+    version: "1.87"

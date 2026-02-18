@@ -22,18 +22,32 @@ if (-not (State-Init)) {
     exit 1
 }
 
+# Read version from profile config (fallback to latest)
+$Version = if ($env:DOTFILES_FEATURE_CONFIG_VERSION) { 
+    $env:DOTFILES_FEATURE_CONFIG_VERSION 
+} else { 
+    "latest" 
+}
+Log-Info "Target Node.js version: $Version"
+
 # Install Node.js via mise
-if (Test-Runtime -Name "node" -Version "22.17.1") {
-    Log-Info "node@22.17.1 is already installed"
+if (Test-Runtime -Name "node" -Version $Version) {
+    Log-Info "node@$Version is already installed"
 } else {
-    Log-Info "Installing node@22.17.1 via mise..."
-    if (-not (Install-Runtime -Name "node" -Version "22.17.1")) {
-        Log-Error "Failed to install node@22.17.1"
+    Log-Info "Installing node@$Version via mise..."
+    if (-not (Install-Runtime -Name "node" -Version $Version)) {
+        Log-Error "Failed to install node@$Version"
         exit 1
     }
-    Log-Success "node@22.17.1 installed"
+    Log-Success "node@$Version installed"
 }
-State-AddPackage -Feature $FeatureName -Package "node@22.17.1"
+State-AddPackage -Feature $FeatureName -Package "node@$Version"
+
+# Record version in state
+if (-not (State-SetRuntime -Feature $FeatureName -Key "version" -Value $Version)) {
+    Log-Error "Failed to record version in state"
+    exit 1
+}
 
 # Install npm packages
 $npmPackages = @(

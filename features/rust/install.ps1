@@ -22,18 +22,22 @@ if (-not (State-Init)) {
     exit 1
 }
 
+# Read version from profile (default: latest)
+$Version = if ($env:DOTFILES_FEATURE_CONFIG_VERSION) { $env:DOTFILES_FEATURE_CONFIG_VERSION } else { "latest" }
+
 # Install Rust via mise
-if (Test-Runtime -Name "rust" -Version "1.87.0") {
-    Log-Info "rust@1.87.0 is already installed"
+if (Test-Runtime -Name "rust" -Version $Version) {
+    Log-Info "rust@$Version is already installed"
 } else {
-    Log-Info "Installing rust@1.87.0 via mise..."
-    if (-not (Install-Runtime -Name "rust" -Version "1.87.0")) {
-        Log-Error "Failed to install rust@1.87.0"
+    Log-Info "Installing rust@$Version via mise..."
+    if (-not (Install-Runtime -Name "rust" -Version $Version)) {
+        Log-Error "Failed to install rust@$Version"
         exit 1
     }
-    Log-Success "rust@1.87.0 installed"
+    Log-Success "rust@$Version installed"
 }
-State-AddPackage -Feature $FeatureName -Package "rust@1.87.0"
+State-AddPackage -Feature $FeatureName -Package "rust@$Version"
+State-SetRuntime -Feature $FeatureName -Key "version" -Value $Version
 
 # Install rust-analyzer via mise
 if (Test-Runtime -Name "rust-analyzer" -Version "2025-05-26") {

@@ -23,6 +23,16 @@ if (-not (State-Init)) {
     exit 1
 }
 
+# Read version from profile config (optional for neovim)
+$Version = if ($env:DOTFILES_FEATURE_CONFIG_VERSION) { 
+    $env:DOTFILES_FEATURE_CONFIG_VERSION 
+} else { 
+    "latest" 
+}
+if ($Version -ne "latest") {
+    Log-Info "Target Neovim version: $Version"
+}
+
 # Check if neovim is already installed
 if (Test-Command "nvim") {
     Log-Info "neovim is already installed"
@@ -35,6 +45,14 @@ if (Test-Command "nvim") {
     Log-Success "neovim package installed"
 }
 State-AddPackage -Feature $FeatureName -Package "neovim"
+
+# Record version in state if specified
+if ($Version -ne "latest") {
+    if (-not (State-SetRuntime -Feature $FeatureName -Key "version" -Value $Version)) {
+        Log-Error "Failed to record version in state"
+        exit 1
+    }
+}
 
 # Deploy configuration files
 $featureFilesDir = Join-Path $ScriptDir "files\nvim"
