@@ -18,16 +18,6 @@ log_task "Installing feature: $FEATURE_NAME"
 # Ensure state is initialized
 state_init
 
-# Check platform
-case "$DOTFILES_PLATFORM" in
-    linux|wsl)
-        ;;
-    *)
-        log_error "Homebrew on Linux is only supported on Linux/WSL"
-        exit 1
-        ;;
-esac
-
 # Check if brew is already installed
 if has_command "brew"; then
     log_info "Homebrew is already installed"

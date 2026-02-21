@@ -1,2 +1,4 @@
-description: Homebrew package manager for Linux and WSL
+description: |
+  Homebrew package manager for Linux and WSL
+  .profile settings must be manuaally removed if Homebrew is uninstalled
 depends: []
