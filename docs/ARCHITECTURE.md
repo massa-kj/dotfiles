@@ -38,6 +38,17 @@ Its goals are:
 
 Architecture exists to enforce boundaries.
 
+## Philosophy
+
+This project prioritizes:
+
+* Safety over convenience
+* Determinism over cleverness
+* Replaceability over tight coupling
+* Clear boundaries over flexibility
+
+The architecture is intentionally strict to preserve long-term maintainability.
+
 ## Architectural Model
 
 The system is composed of five layers:

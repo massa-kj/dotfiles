@@ -10,7 +10,7 @@ Supports:
 
 This repository allows you to define your development environment declaratively and reproduce it safely.
 
-# Overview
+## Overview
 
 This project is built around five principles:
 
@@ -23,9 +23,9 @@ This project is built around five principles:
 This is not a collection of configuration files.
 It is a deterministic environment orchestration system.
 
-# Quick Start
+## Quick Start
 
-## Linux / WSL
+### Linux / WSL
 
 ```bash
 git clone https://github.com/massa-kj/dotfiles.git ~/dotfiles
@@ -40,7 +40,7 @@ cd ~/dotfiles
 > - jq (JSON processor)
 > - yq (YAML processor)
 
-## Windows
+### Windows
 
 ```powershell
 git clone https://github.com/massa-kj/dotfiles.git $HOME\dotfiles
@@ -61,7 +61,7 @@ Bootstrap installs only minimal execution dependencies.
 
 Feature installation is handled by `apply`.
 
-# Using Profiles
+## Using Profiles
 
 Profiles define the desired environment.
 
@@ -69,9 +69,10 @@ Example:
 
 ```yaml
 features:
-  - git
-  - neovim
-  - node
+  git: {}
+  neovim: {}
+  node:
+    version: "22.17.1"
 ```
 
 Run:
@@ -84,7 +85,7 @@ Profiles declare intent only.
 
 They do not contain logic or installation details.
 
-# Architecture
+## Architecture
 
 The system is structured into layers:
 
@@ -103,7 +104,7 @@ platforms → profiles → apply → core → features
 
 For full design documentation, see [this section](#design-documents).
 
-# Safety Model
+### Safety Model
 
 Uninstall operations remove only resources recorded in state.
 
@@ -113,7 +114,7 @@ State is the only authority.
 
 See `STATE_SPEC.md` for details.
 
-# Extending the System
+### Extending the System
 
 To create a new feature:
 
@@ -136,9 +137,9 @@ Use package abstraction and state APIs.
 
 See `FEATURE_GUIDE.md` for full guidelines.
 
-# Documentation
+## Documentation
 
-## Design Documents
+### Design Documents
 
 * **[ARCHITECTURE.md](docs/ARCHITECTURE.md)** – System design and layer responsibilities
   * Read this to understand *why* the system is structured this way
@@ -156,19 +157,8 @@ See `FEATURE_GUIDE.md` for full guidelines.
   * Read this to understand state format and uninstall safety
   * Covers: JSON schema, invariants, versioning policy
 
-## Writing Guidelines
+### Writing Guidelines
 
 * **[DOCUMENTATION_GUIDE.md](docs/DOCUMENTATION_GUIDE.md)** – Documentation structure policy
   * Read this before updating documentation
   * Covers: what to document where, stability vs implementation
-
-# Philosophy
-
-This project prioritizes:
-
-* Safety over convenience
-* Determinism over cleverness
-* Replaceability over tight coupling
-* Clear boundaries over flexibility
-
-The architecture is intentionally strict to preserve long-term maintainability.
