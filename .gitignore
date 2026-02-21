@@ -1,7 +1,11 @@
 state
 .env.bootstrap
-tmp/*
+tmp
 !tmp/.gitkeep
+
+# Quality assurance artifacts
+quality/windows/logs/
+quality/windows/sandbox/dotfiles.wsb
 
 editor/nvim/lazy-lock.json
 git/lazygit/state.yml
