@@ -61,7 +61,7 @@ Write-Step "Checking package manager..."
 if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
     Write-Error "winget is not available"
     Write-Info "winget is required and should be pre-installed on Windows 10 (1809+) / Windows 11"
-    Write-Info "Install from: https://aka.ms/getwinget"
+    Write-Info "For manual installation, visit: https://aka.ms/getwinget"
     exit 1
 } else {
     Write-Info "winget is available"
