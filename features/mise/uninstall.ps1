@@ -27,7 +27,7 @@ if (-not (State-HasFeature -Feature $FeatureName)) {
 Remove-TrackedFiles -Feature $FeatureName
 
 # Uninstall packages
-$packages = State-GetPackages -Feature $FeatureName
+$packages = @(State-GetPackages -Feature $FeatureName)
 foreach ($pkg in $packages) {
     Log-Info "Uninstalling package: $pkg"
     Uninstall-Package -Name $pkg
