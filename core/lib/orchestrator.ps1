@@ -103,7 +103,7 @@ function Test-VersionMismatch {
     # Get desired version from profile
     $featureConfig = Get-FeatureConfig -Feature $Feature
     $desiredVersion = $null
-    if ($featureConfig -and $featureConfig.version) {
+    if ($featureConfig -and ($null -ne $featureConfig.PSObject.Properties['version'])) {
         $desiredVersion = $featureConfig.version
     }
     
@@ -239,7 +239,7 @@ function Invoke-Install {
         # Extract feature config and pass via environment variable
         $featureConfig = Get-FeatureConfig -Feature $feature
         $featureVersion = $null
-        if ($featureConfig -and $featureConfig.version) {
+        if ($featureConfig -and ($null -ne $featureConfig.PSObject.Properties['version'])) {
             $featureVersion = $featureConfig.version
         }
         
