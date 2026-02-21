@@ -10,10 +10,10 @@ features:
   vcredist: {}
   # vscode: {}
 
-  # lua: {}
-  # node:
-  #   version: "22.17.1"
-  # python:
-  #   version: "3.12"
-  # rust:
-  #   version: "1.87"
+  lua: {}
+  node:
+    version: "22.17.1"
+  python:
+    version: "3.12"
+  rust:
+    version: "1.87"
