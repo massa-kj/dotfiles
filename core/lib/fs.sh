@@ -69,7 +69,8 @@ backup_dir() {
 }
 
 # link_file <feature> <src> <dst>
-# Create symbolic link for file and register to state.
+# Link a file to dst and register to state.
+# Attempts symbolic link; falls back to copy if not supported.
 link_file() {
     local feature="$1"
     local src="$2"
@@ -85,16 +86,21 @@ link_file() {
         return 1
     fi
 
-    ensure_dir "$(dirname "$dst")"
-    backup_file "$dst"
+    _fs_ensure_parent_dir "$dst" || return 1
+    _fs_ensure_not_conflicting "$dst" || return 1
 
-    ln -sf "$src" "$dst"
+    if ! _fs_try_symlink "$src" "$dst"; then
+        # Fallback to copy
+        cp -f "$src" "$dst" || { log_error "link_file: copy failed: $dst"; return 1; }
+    fi
+
     state_add_file "$feature" "$dst"
     log_success "Linked $dst"
 }
 
 # link_dir <feature> <src> <dst>
-# Create symbolic link for directory and register to state.
+# Link a directory to dst and register to state.
+# Attempts symbolic link; falls back to copy if not supported.
 link_dir() {
     local feature="$1"
     local src="$2"
@@ -110,15 +116,14 @@ link_dir() {
         return 1
     fi
 
-    ensure_dir "$(dirname "$dst")"
-    backup_dir "$dst"
+    _fs_ensure_parent_dir "$dst" || return 1
+    _fs_ensure_not_conflicting "$dst" || return 1
 
-    # Remove if it's a symlink to a different location
-    if [[ -L "$dst" ]]; then
-        rm -f "$dst"
+    if ! _fs_try_symlink "$src" "$dst"; then
+        # Fallback to copy
+        cp -rf "$src" "$dst" || { log_error "link_dir: copy failed: $dst"; return 1; }
     fi
 
-    ln -sf "$src" "$dst"
     state_add_file "$feature" "$dst"
     log_success "Linked $dst"
 }
@@ -135,16 +140,53 @@ remove_tracked_files() {
 
     log_info "Removing configuration files..."
     while IFS= read -r file; do
-        if [[ -n "$file" ]]; then
-            if [[ -L "$file" ]] || [[ -f "$file" ]]; then
-                log_info "Removing: $file"
-                rm -f "$file"
-            elif [[ -d "$file" ]]; then
-                log_info "Removing directory: $file"
-                rm -rf "$file"
-            else
-                log_info "Path does not exist, skipping: $file"
-            fi
+        if [[ -z "$file" ]]; then continue; fi
+
+        if [[ ! -e "$file" ]] && [[ ! -L "$file" ]]; then
+            log_info "Path does not exist, skipping: $file"
+            continue
         fi
+
+        log_info "Removing: $file"
+        rm -rf "$file"
     done < <(state_get_files "$feature")
+}
+
+# -----------------------------------------------------------------------------
+# Internal helpers
+# -----------------------------------------------------------------------------
+
+# _fs_ensure_parent_dir <path>
+# Create parent directory of path if it does not exist.
+_fs_ensure_parent_dir() {
+    local parent
+    parent="$(dirname "$1")"
+    if [[ ! -d "$parent" ]]; then
+        mkdir -p "$parent"
+    fi
+}
+
+# _fs_ensure_not_conflicting <path>
+# Fail if path exists and is not managed by state.
+# If it is managed, remove it so the caller can replace it.
+_fs_ensure_not_conflicting() {
+    local path="$1"
+
+    if [[ -e "$path" ]] || [[ -L "$path" ]]; then
+        if state_has_file "$path"; then
+            rm -rf "$path"
+        else
+            log_error "Path exists and is not managed: $path"
+            return 1
+        fi
+    fi
+}
+
+# _fs_try_symlink <src> <dst>
+# Attempt to create a symbolic link. Returns 0 on success, 1 on failure.
+_fs_try_symlink() {
+    local src="$1"
+    local dst="$2"
+
+    ln -s "$src" "$dst" 2>/dev/null
 }

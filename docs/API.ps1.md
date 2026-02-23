@@ -16,13 +16,12 @@ Provide file system operations for feature installation.
   Backup existing directory with timestamp if it exists and is not a symlink.
 
 - **`New-FileLink <Feature> <Source> <Destination>`**  
-  Create symbolic link for file and register to state.
+  Link or copy a file to destination and register to state.  
+  Attempts symbolic link first; falls back to copy if not supported.
 
 - **`New-DirectoryLink <Feature> <Source> <Destination>`**  
-  Create symbolic link for directory and register to state.
-
-- **`Copy-ConfigFile <Feature> <Source> <Destination>`**  
-  Copy configuration file instead of symlinking and register to state.
+  Link or copy a directory to destination and register to state.  
+  Attempts symbolic link, then junction, then falls back to copy.
 
 - **`Remove-TrackedFiles <Feature>`**  
   Remove all files tracked by a feature from state.
@@ -147,6 +146,9 @@ Manage state file operations safely with atomic updates.
 
 - **`State-GetFiles <Feature>`**  
   Retrieve file path list for a feature.
+
+- **`State-HasFile <File>`**  
+  Check if a file path is registered under any feature.
 
 - **`State-RemoveFeature <Feature>`**  
   Remove a feature entry from state.

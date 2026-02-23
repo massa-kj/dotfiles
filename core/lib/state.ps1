@@ -11,6 +11,7 @@
 #   State-AddFile <Feature> <File>
 #   State-GetPackages <Feature>
 #   State-GetFiles <Feature>
+#   State-HasFile <File>
 #   State-RemoveFeature <Feature>
 #   State-ListFeatures
 #   State-SetRuntime <Feature> <Key> <Value>
@@ -170,6 +171,24 @@ function State-GetFiles {
 
     $state = Get-Content -Path $global:DOTFILES_STATE_FILE -Raw | ConvertFrom-Json
     return $state.features.$Feature.files
+}
+
+# State-HasFile <File>
+# Check if a file path is registered under any feature.
+function State-HasFile {
+    param(
+        [Parameter(Mandatory=$true)]
+        [string]$File
+    )
+
+    $features = State-ListFeatures
+    foreach ($feature in $features) {
+        $files = State-GetFiles -Feature $feature
+        if ($files -contains $File) {
+            return $true
+        }
+    }
+    return $false
 }
 
 # State-RemoveFeature <Feature>

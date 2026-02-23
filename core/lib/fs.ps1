@@ -10,7 +10,6 @@
 #   Backup-Directory <Target>
 #   New-FileLink <Feature> <Source> <Destination>
 #   New-DirectoryLink <Feature> <Source> <Destination>
-#   Copy-ConfigFile <Feature> <Source> <Destination>
 #   Remove-TrackedFiles <Feature>
 #   Get-HomePath
 #   Get-ConfigPath [AppName]
@@ -73,7 +72,8 @@ function Backup-Directory {
 }
 
 # New-FileLink <Feature> <Source> <Destination>
-# Create symbolic link for file and register to state.
+# Link or copy a file to destination and register to state.
+# Attempts symbolic link first; falls back to copy if not supported.
 function New-FileLink {
     param(
         [Parameter(Mandatory=$true)]
@@ -83,38 +83,33 @@ function New-FileLink {
         [Parameter(Mandatory=$true)]
         [string]$Destination
     )
-    
+
     if (-not (Test-Path $Source)) {
         Log-Error "Source file not found: $Source"
         return $false
     }
-    
-    # Ensure parent directory exists
-    $parentDir = Split-Path -Parent $Destination
-    Ensure-Directory -Path $parentDir
-    
-    # Backup existing file
-    Backup-File -Target $Destination
-    
-    # Create symlink
+
     try {
-        # Remove existing symlink if it points to a different location
-        if ((Test-Path $Destination) -and (Get-Item $Destination).LinkType) {
-            Remove-Item -Path $Destination -Force
+        Ensure-ParentDir -Path $Destination
+        Ensure-NotConflicting -Path $Destination
+
+        if (-not (Try-Symlink -Src $Source -Dst $Destination)) {
+            # Fallback to copy
+            Copy-Item -Force $Source $Destination -ErrorAction Stop
         }
-        
-        New-Item -ItemType SymbolicLink -Path $Destination -Target $Source -Force | Out-Null
+
         State-AddFile -Feature $Feature -File $Destination
         Log-Success "Linked $Destination"
         return $true
     } catch {
-        Log-Error "Failed to create symlink: $_"
+        Log-Error "Failed to link file: $_"
         return $false
     }
 }
 
 # New-DirectoryLink <Feature> <Source> <Destination>
-# Create symbolic link for directory and register to state.
+# Link or copy a directory to destination and register to state.
+# Attempts symbolic link, then junction, then falls back to copy.
 function New-DirectoryLink {
     param(
         [Parameter(Mandatory=$true)]
@@ -124,68 +119,29 @@ function New-DirectoryLink {
         [Parameter(Mandatory=$true)]
         [string]$Destination
     )
-    
+
     if (-not (Test-Path $Source -PathType Container)) {
         Log-Error "Source directory not found: $Source"
         return $false
     }
-    
-    # Ensure parent directory exists
-    $parentDir = Split-Path -Parent $Destination
-    Ensure-Directory -Path $parentDir
-    
-    # Backup existing directory
-    Backup-Directory -Target $Destination
-    
-    # Create symlink
+
     try {
-        # Remove existing symlink if it exists
-        if ((Test-Path $Destination) -and (Get-Item $Destination).LinkType) {
-            Remove-Item -Path $Destination -Force
+        Ensure-ParentDir -Path $Destination
+        Ensure-NotConflicting -Path $Destination
+
+        if (-not (Try-Symlink -Src $Source -Dst $Destination)) {
+            # Try junction
+            if (-not (Try-Junction -Src $Source -Dst $Destination)) {
+                # Fallback to copy
+                Copy-Item -Recurse -Force $Source $Destination -ErrorAction Stop
+            }
         }
-        
-        New-Item -ItemType SymbolicLink -Path $Destination -Target $Source -Force | Out-Null
+
         State-AddFile -Feature $Feature -File $Destination
         Log-Success "Linked $Destination"
         return $true
     } catch {
-        Log-Error "Failed to create directory symlink: $_"
-        return $false
-    }
-}
-
-# Copy-ConfigFile <Feature> <Source> <Destination>
-# Copy configuration file instead of symlinking and register to state.
-function Copy-ConfigFile {
-    param(
-        [Parameter(Mandatory=$true)]
-        [string]$Feature,
-        [Parameter(Mandatory=$true)]
-        [string]$Source,
-        [Parameter(Mandatory=$true)]
-        [string]$Destination
-    )
-    
-    if (-not (Test-Path $Source)) {
-        Log-Error "Source file not found: $Source"
-        return $false
-    }
-    
-    # Ensure parent directory exists
-    $parentDir = Split-Path -Parent $Destination
-    Ensure-Directory -Path $parentDir
-    
-    # Backup existing file
-    Backup-File -Target $Destination
-    
-    # Copy file
-    try {
-        Copy-Item -Path $Source -Destination $Destination -Force
-        State-AddFile -Feature $Feature -File $Destination
-        Log-Success "Copied $Destination"
-        return $true
-    } catch {
-        Log-Error "Failed to copy file: $_"
+        Log-Error "Failed to link directory: $_"
         return $false
     }
 }
@@ -216,7 +172,8 @@ function Remove-TrackedFiles {
             Log-Info "Removing symlink: $file"
             Remove-Item -Path $file -Force
         } else {
-            Log-Warn "Path is not a symlink, skipping: $file"
+            Log-Info "Removing file: $file"
+            Remove-Item -Recurse -Force $file
         }
     }
 }
@@ -254,4 +211,51 @@ function Expand-HomeVariables {
     }
     
     return $Path
+}
+
+# -------------------------------------------------------------------------
+# Internal helpers
+# -------------------------------------------------------------------------
+
+function Ensure-ParentDir {
+    param([string]$Path)
+
+    $parent = Split-Path -Parent $Path
+    if (-not (Test-Path $parent)) {
+        New-Item -ItemType Directory -Path $parent -Force | Out-Null
+    }
+}
+
+function Ensure-NotConflicting {
+    param([string]$Path)
+
+    if (Test-Path $Path) {
+        if (State-HasFile -File $Path) {
+            Remove-Item -Recurse -Force $Path
+        } else {
+            throw "Path exists and is not managed: $Path"
+        }
+    }
+}
+
+function Try-Symlink {
+    param([string]$Src, [string]$Dst)
+
+    try {
+        New-Item -ItemType SymbolicLink -Path $Dst -Target $Src -ErrorAction Stop | Out-Null
+        return $true
+    } catch {
+        return $false
+    }
+}
+
+function Try-Junction {
+    param([string]$Src, [string]$Dst)
+
+    try {
+        cmd /c "mklink /J `"$Dst`" `"$Src`"" | Out-Null
+        return $true
+    } catch {
+        return $false
+    }
 }

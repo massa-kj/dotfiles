@@ -12,6 +12,7 @@
 #   state_add_file <feature> <path>
 #   state_get_packages <feature>
 #   state_get_files <feature>
+#   state_has_file <path>
 #   state_remove_feature <feature>
 #   state_list_features
 #   state_set_runtime <feature> <key> <value>
@@ -156,6 +157,21 @@ state_get_files() {
     fi
 
     jq -r ".features[\"$feature\"].files[]" "$DOTFILES_STATE_FILE" 2>/dev/null
+}
+
+# state_has_file <path>
+# Check if a file path is registered under any feature.
+state_has_file() {
+    local path="$1"
+
+    if [[ -z "$path" ]]; then
+        log_error "state_has_file: path is required"
+        return 1
+    fi
+
+    jq -e --arg p "$path" \
+        '[.features | to_entries[] | .value.files[]] | index($p) != null' \
+        "$DOTFILES_STATE_FILE" >/dev/null 2>&1
 }
 
 # state_remove_feature <feature>

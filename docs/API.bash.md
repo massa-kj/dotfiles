@@ -16,10 +16,12 @@ Provide file system operations for feature installation.
   Backup existing directory with timestamp if it exists and is not a symlink.
 
 - **`link_file <feature> <src> <dst>`**  
-  Create symbolic link for file and register to state.
+  Link a file to dst and register to state.  
+  Attempts symbolic link; falls back to copy if not supported.
 
 - **`link_dir <feature> <src> <dst>`**  
-  Create symbolic link for directory and register to state.
+  Link a directory to dst and register to state.  
+  Attempts symbolic link; falls back to copy if not supported.
 
 - **`remove_tracked_files <feature>`**  
   Remove all files tracked by a feature from state.
@@ -120,6 +122,9 @@ Manage state file operations safely with atomic updates.
 
 - **`state_get_files <feature>`**  
   Retrieve file path list for a feature (one per line).
+
+- **`state_has_file <path>`**  
+  Check if a file path is registered under any feature.
 
 - **`state_remove_feature <feature>`**  
   Remove a feature entry from state.
