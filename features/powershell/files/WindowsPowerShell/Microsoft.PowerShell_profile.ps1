@@ -8,7 +8,7 @@ $env:DOTFILES_OS_TYPE = "windows"
 
 # Initialize mise (version manager)
 if (Get-Command mise -ErrorAction SilentlyContinue) {
-    Invoke-Expression (& { (mise activate powershell | Out-String) })
+    Invoke-Expression (& { (mise activate pwsh | Out-String) })
 }
 
 function repo {
