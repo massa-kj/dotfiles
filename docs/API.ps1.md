@@ -85,6 +85,23 @@ Provide package manager abstraction for system packages and runtimes.
   Check if a runtime is installed via mise.
 
 
+## repo
+Provide repository-based tool installation utilities.
+
+### Stable APIs
+- **`Clone-Repository <Feature> <RepoUrl> <DestPath>`**  
+  Clone a git repository to DestPath, or pull if it already exists.  
+  Registers the destination directory to feature state for uninstall tracking.
+
+- **`Resolve-ToolPath <ToolName>`**  
+  Returns the canonical install path for a locally managed tool binary.  
+  Output: $env:USERPROFILE\.local\bin\<ToolName>
+
+- **`Test-ToolInstalled <ToolName>`**  
+  Check if a tool exists at the local install path (~\.local\bin\<ToolName>).  
+  Returns $true if installed, $false otherwise.
+
+
 ## resolver
 Resolve feature dependencies and perform topological sorting.
 

@@ -296,6 +296,61 @@ Features must not:
 Package strategy may change in the future.
 Features must remain insulated from it.
 
+## Repository-Based Installation Rules
+
+Some tools are not available through a package manager and must be installed
+by cloning a git repository directly.
+
+Features managing such tools must use the `repo` abstraction:
+
+* **Bash**: `clone_repository`, `resolve_tool_path`, `is_tool_installed`
+* **PowerShell**: `Clone-Repository`, `Resolve-ToolPath`, `Test-ToolInstalled`
+
+### Conventions
+
+Source repositories are cloned to:
+
+* `~/.local/src/<tool>` (Bash)
+* `$env:USERPROFILE\.local\src\<tool>` (PowerShell)
+
+Tool binaries or launchers are placed in:
+
+* `~/.local/bin/<tool>` (Bash)
+* `$env:USERPROFILE\.local\bin\<tool>` (PowerShell)
+
+### Usage Pattern
+
+```bash
+# Bash
+REPO_DEST="$HOME/.local/src/my-tool"
+clone_repository "$FEATURE_NAME" "https://github.com/example/my-tool.git" "$REPO_DEST"
+link_file "$FEATURE_NAME" "$REPO_DEST/my-tool.sh" "$(resolve_tool_path my-tool)"
+```
+
+```powershell
+# PowerShell
+$RepoDir = Join-Path $env:USERPROFILE ".local\src\my-tool"
+Clone-Repository -Feature $FeatureName -RepoUrl "https://github.com/example/my-tool.git" -DestPath $RepoDir
+New-FileLink -Feature $FeatureName -Source "$RepoDir\launch.cmd" -Destination (Resolve-ToolPath "my-tool")
+```
+
+### Rules
+
+Features must:
+
+* Use `clone_repository` / `Clone-Repository` for all git-based installs
+* Register the cloned directory via state (handled automatically by `clone_repository`)
+* Register any placed binaries via `link_file` / `New-FileLink`
+
+Features must not:
+
+* Call `git` directly without going through the repo abstraction
+* Clone into arbitrary paths outside conventions
+* Hardcode repository paths
+
+Uninstall is handled automatically by `remove_tracked_files` / `Remove-TrackedFiles`
+because `clone_repository` registers the cloned directory in state.
+
 ## Idempotency Expectations
 
 Running install twice must not:

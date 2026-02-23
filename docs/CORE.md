@@ -80,6 +80,7 @@ core/lib/
 ├── package
 ├── runner
 ├── fs
+├── repo
 ├── logger
 ```
 
@@ -194,6 +195,25 @@ Must enforce:
 * No root-level destructive deletion
 * Explicit path handling
 
+### repo
+
+Responsibility:
+
+* Clone or update git repositories to local source directory
+* Resolve canonical install paths for locally managed tool binaries
+* Check local binary existence
+
+Convention:
+
+* Source repositories: `~/.local/src/<tool>`
+* Tool binaries: `~/.local/bin/<tool>`
+
+Must NOT:
+
+* Build or compile tools
+* Contain tool-specific install logic
+* Manage package manager backends
+
 ### logger
 
 Responsibility:
@@ -208,36 +228,8 @@ Must NOT:
 
 ## Public API Surface
 
-Core exposes a limited API to:
-
-* cmd/ orchestration commands (cmd/apply.sh, cmd/apply.ps1, etc.)
-* feature install/uninstall scripts (indirectly)
-
-Examples (conceptual):
-
-State:
-
-* state_init
-* state_has_feature
-* state_add_package
-* state_add_file
-* state_remove_feature
-
-Package:
-
-* install_package
-* remove_package
-* install_runtime
-* remove_runtime
-
-Resolver:
-
-* resolve_features
-
-Orchestrator:
-
-* run_install
-* run_uninstall
+[For Linux](./API.bash.md)
+[For Windows](./API.ps1.md)
 
 The exact function list may evolve,
 but responsibilities must not drift.
@@ -255,55 +247,8 @@ Breaking changes to these functions require:
 * Migration guidance
 * Considered a major change
 
-#### State Module
-
-* `state_init`
-* `state_has_feature`
-* `state_add_package`
-* `state_add_file`
-* `state_get_packages`
-* `state_get_files`
-* `state_remove_feature`
-* `state_list_features`
-
-#### Package Module
-
-* `install_package`
-* `remove_package`
-* `install_runtime`
-* `remove_runtime`
-* `has_package`
-* `has_runtime`
-
-#### Resolver Module
-
-* `read_feature_metadata`
-* `resolve_dependencies`
-
-#### File System Module (fs)
-
-* `ensure_dir`
-* `backup_file`
-* `backup_dir`
-* `link_file`
-* `link_dir`
-* `remove_tracked_files`
-
-#### Logger Module
-
-* `log_debug`
-* `log_info`
-* `log_success`
-* `log_warn`
-* `log_error`
-* `log_task`
-
-#### Runner Module
-
-* `has_command`
-* `require_command`
-* `run_or_die`
-* `ensure_sudo`
+[For Linux](./API.bash.md)
+[For Windows](./API.ps1.md)
 
 ### Internal API
 
