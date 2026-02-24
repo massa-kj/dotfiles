@@ -173,18 +173,18 @@ function Test-Runtime {
         [string]$Version = $null
     )
     
-    if (-not (Get-Command mise -ErrorAction SilentlyContinue)) {
+    if (-not (Get-Command mise.exe -ErrorAction SilentlyContinue)) {
         Log-Error "mise is not available"
         return $false
     }
     
     try {
         if ($Version) {
-            & mise where "$Name@$Version" 2>$null | Out-Null
+            & mise.exe where "$Name@$Version" 2>$null | Out-Null
             return $LASTEXITCODE -eq 0
         }
         
-        & mise ls --installed $Name 2>$null | Out-Null
+        & mise.exe ls --installed $Name 2>$null | Out-Null
         return $LASTEXITCODE -eq 0
     } catch {
         return $false
@@ -201,7 +201,7 @@ function Install-Runtime {
         [string]$Version
     )
     
-    if (-not (Get-Command mise -ErrorAction SilentlyContinue)) {
+    if (-not (Get-Command mise.exe -ErrorAction SilentlyContinue)) {
         Log-Error "mise is not available"
         return $false
     }
@@ -214,16 +214,19 @@ function Install-Runtime {
     Log-Info "Installing runtime: $Name@$Version"
     
     try {
-        & mise install "$Name@$Version"
+        & mise.exe install "$Name@$Version"
         if ($LASTEXITCODE -ne 0) {
             throw "mise install failed"
         }
         
         Log-Info "Setting global runtime: $Name@$Version"
-        & mise use -g "$Name@$Version"
+        & mise.exe use -g "$Name@$Version"
         if ($LASTEXITCODE -ne 0) {
             throw "mise use failed"
         }
+        
+        # Re-activate mise to ensure all shims are updated
+        mise.exe activate pwsh
         
         Log-Success "Runtime installed: $Name@$Version"
         return $true
@@ -242,7 +245,7 @@ function Uninstall-Runtime {
         [string]$Version = $null
     )
     
-    if (-not (Get-Command mise -ErrorAction SilentlyContinue)) {
+    if (-not (Get-Command mise.exe -ErrorAction SilentlyContinue)) {
         Log-Error "mise is not available"
         return $false
     }
@@ -257,7 +260,7 @@ function Uninstall-Runtime {
     Log-Info "Uninstalling runtime: $runtimeSpec"
     
     try {
-        & mise uninstall $runtimeSpec
+        & mise.exe uninstall $runtimeSpec
         if ($LASTEXITCODE -ne 0) {
             throw "mise uninstall failed"
         }
