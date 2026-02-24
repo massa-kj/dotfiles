@@ -37,8 +37,12 @@ foreach ($pkg in $packages) {
         # uv package
         $uvPkg = $Matches[1]
         Log-Info "Uninstalling uv package: $uvPkg"
-        & uv pip uninstall --system $uvPkg 2>&1 | Out-Null
-    } elseif ($pkg -match "^([^@]+)@(.+)$") {
+        & uv pip uninstall $uvPkg 2>&1 | Out-Null
+        $packages = $packages | Where-Object { $_ -ne $uvPkg }
+    }
+}
+foreach ($pkg in $packages) {
+    if ($pkg -match "^([^@]+)@(.+)$") {
         # Runtime installed via mise
         $runtime = $Matches[1]
         $version = $Matches[2]
