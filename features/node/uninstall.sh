@@ -23,11 +23,11 @@ state_init
 mapfile -t packages < <(state_get_packages "$FEATURE_NAME")
 
 # Remove packages
+# Remove npm packages first
 for pkg in "${packages[@]}"; do
     if [[ -z "$pkg" ]]; then
         continue
     fi
-
     if [[ "$pkg" == "npm:"* ]]; then
         # npm package
         npm_pkg="${pkg#npm:}"
@@ -35,11 +35,18 @@ for pkg in "${packages[@]}"; do
             log_info "Removing npm package: $npm_pkg"
             npm uninstall -g "$npm_pkg"
         fi
-    elif [[ "$pkg" == *"@"* ]]; then
+    fi
+done
+
+# Remove node runtimes after npm packages
+for pkg in "${packages[@]}"; do
+    if [[ -z "$pkg" ]]; then
+        continue
+    fi
+    if [[ "$pkg" == *"@"* ]] && [[ "$pkg" != "npm:"* ]]; then
         # Runtime package (node@version)
         name="${pkg%%@*}"
         version="${pkg##*@}"
-        
         if has_runtime "$name" "$version"; then
             log_info "Removing runtime: $name@$version"
             remove_runtime "$name" "$version"

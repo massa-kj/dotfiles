@@ -23,18 +23,18 @@ state_init
 VERSION="${DOTFILES_FEATURE_CONFIG_VERSION:-latest}"
 log_info "Target Node.js version: $VERSION"
 
-# Install Node.js via mise
-if has_runtime "node" "$VERSION"; then
-    log_info "node@$VERSION is already installed"
+# Install Node
+if ACTUAL_VERSION=$(install_runtime "node" "$VERSION"); then
+    if [[ "$ACTUAL_VERSION" != "$VERSION" ]]; then
+        log_info "Resolved $VERSION to actual version: $ACTUAL_VERSION"
+    fi
 else
-    log_info "Installing node@$VERSION via mise..."
-    install_runtime "node" "$VERSION"
-    log_success "node@$VERSION installed"
+    log_error "Failed to install node@$VERSION"
+    exit 1
 fi
-state_add_package "$FEATURE_NAME" "node@$VERSION"
 
-# Record version in state
-state_set_runtime "$FEATURE_NAME" "version" "$VERSION"
+state_add_package "$FEATURE_NAME" "node@$ACTUAL_VERSION"
+state_set_runtime "$FEATURE_NAME" "version" "$ACTUAL_VERSION"
 
 # Install npm packages
 declare -a npm_packages=(
