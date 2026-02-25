@@ -12,6 +12,7 @@
 #   remove_runtime <name> [version]
 #   has_package <name>
 #   has_runtime <name> [version]
+#   resolve_runtime_version <name> <version>
 # -----------------------------------------------------------------------------
 
 # This library expects core/env.sh and core/lib/logger.sh to be sourced by the caller.
@@ -195,6 +196,41 @@ _ensure_mise_available() {
     return 1
 }
 
+# resolve_runtime_version <name> <version>
+# Resolve a runtime version alias (e.g. "latest", "20") to the actual version number.
+# Prints the resolved version to stdout.
+resolve_runtime_version() {
+    local name="$1"
+    local version="$2"
+
+    if [[ -z "$name" ]] || [[ -z "$version" ]]; then
+        log_error "resolve_runtime_version: runtime name and version are required"
+        return 1
+    fi
+
+    if ! _ensure_mise_available; then
+        log_error "mise is not available"
+        return 1
+    fi
+
+    # If already a concreate version, return as is
+    if [[ "$version" =~ ^[0-9]+(\.[0-9]+)*$ ]]; then
+        echo "$version"
+        return 0
+    fi
+    
+    # Resolve alias to actual version using mise
+    local resolved_version
+    resolved_version=$(mise latest "$name@$version" 2>/dev/null)
+    if [[ -n "$resolved_version" ]]; then
+        echo "$resolved_version"
+        return 0
+    fi
+    
+    # Fallback: return as is
+    echo "$version"
+}
+
 # has_runtime <name> [version]
 # Check if a runtime is installed via mise.
 has_runtime() {
@@ -212,7 +248,10 @@ has_runtime() {
     fi
 
     if [[ -n "$version" ]]; then
-        mise where "$name@$version" >/dev/null 2>&1
+        # Resolve alias to actual version for checking
+        local resolved_version
+        resolved_version=$(resolve_runtime_version "$name" "$version")
+        mise where "$name@$resolved_version" >/dev/null 2>&1
         return $?
     fi
 
@@ -222,6 +261,7 @@ has_runtime() {
 
 # install_runtime <name> <version>
 # Install a runtime via mise and set as global default.
+# Prints the actual installed version to stdout.
 install_runtime() {
     local name="$1"
     local version="$2"
@@ -235,39 +275,43 @@ install_runtime() {
         log_error "mise is not available"
         return 1
     fi
+    
+    # Resolve alias to actual version
+    local resolved_version
+    resolved_version=$(resolve_runtime_version "$name" "$version")
 
-    if has_runtime "$name" "$version"; then
-        log_info "Runtime already installed: $name@$version"
+    if has_runtime "$name" "$resolved_version"; then
+        log_info "Runtime already installed: $name@$resolved_version"
+        echo "$resolved_version"
         return 0
     fi
 
-    log_info "Installing runtime: $name@$version"
-    mise install "$name@$version"
+    log_info "Installing runtime: $name@$resolved_version"
+    mise install "$name@$resolved_version" >&2
 
     if [[ $? -ne 0 ]]; then
-        log_error "Failed to install runtime: $name@$version"
+        log_error "Failed to install runtime: $name@$resolved_version"
         return 1
     fi
 
-    log_info "Setting global runtime: $name@$version"
-    mise use -g "$name@$version"
+    log_info "Setting global runtime: $name@$resolved_version"
+    mise use -g "$name@$resolved_version" >&2
     
     # Ensure the newly installed runtime is available in current shell
-    # Get the bin directory for this runtime and add to PATH
     local runtime_path
-    runtime_path=$(mise where "$name@$version" 2>/dev/null || true)
+    runtime_path=$(mise where "$name@$resolved_version" 2>/dev/null || true)
     if [[ -n "$runtime_path" ]]; then
         # Add runtime bin directory to PATH
         if [[ -d "$runtime_path/bin" ]]; then
             export PATH="$runtime_path/bin:$PATH"
-            log_info "Added $name@$version to PATH: $runtime_path/bin"
+            log_info "Added $name@$resolved_version to PATH: $runtime_path/bin"
         fi
     fi
     
     # Re-activate mise to ensure all shims are updated
-    eval "$(mise activate bash)"
+    eval "$(mise activate bash)" >&2
     
-    return 0
+    echo "$resolved_version"
 }
 
 # remove_runtime <name> [version]
