@@ -1,5 +1,5 @@
 state
-.env.bootstrap
+.env.bootstrap*
 tmp
 !tmp/.gitkeep
 
@@ -7,5 +7,5 @@ tmp
 quality/windows/logs/
 quality/windows/sandbox/dotfiles.wsb
 
-editor/nvim/lazy-lock.json
-git/lazygit/state.yml
+lazy-lock.json
+lazygit/state.yml
