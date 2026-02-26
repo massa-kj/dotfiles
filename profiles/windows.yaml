@@ -8,7 +8,7 @@ features:
   powershell: {}
   scoop: {}
   vcredist: {}
-  # vscode: {}
+  vscode: {}
 
   lua: {}
   node:
