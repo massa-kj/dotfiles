@@ -67,10 +67,7 @@ if (Test-Path $targetProfilePath) {
 # Copy profile file
 Log-Info "Deploying PowerShell profile..."
 try {
-    Copy-Item -Path $sourceProfilePath -Destination $targetProfilePath -Force
-    
-    # Unblock the file to allow execution in restrictive environments like Windows Sandbox
-    # Unblock-File -Path $targetProfilePath -ErrorAction SilentlyContinue
+    New-FileLink -Feature $FeatureName -Source $sourceProfilePath -Destination $targetProfilePath
     
     State-AddFile -Feature $FeatureName -File $targetProfilePath
     Log-Success "PowerShell profile deployed: $targetProfilePath"

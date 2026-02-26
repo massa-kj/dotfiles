@@ -6,6 +6,9 @@ Set-Alias lg lazygit
 # The operating system type for dotfiles configuration scripts
 $env:DOTFILES_OS_TYPE = "windows"
 
+# Prepared ~/.local/bin to PATH
+$env:PATH = "$env:USERPROFILE\.local\bin;$env:PATH"
+
 # Initialize mise (version manager)
 if (Get-Command mise -ErrorAction SilentlyContinue) {
     Invoke-Expression (& { (mise activate pwsh | Out-String) })
