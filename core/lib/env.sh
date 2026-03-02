@@ -38,3 +38,20 @@ export DOTFILES_FEATURES_DIR
 # Profiles directory
 DOTFILES_PROFILES_DIR="${DOTFILES_ROOT}/profiles"
 export DOTFILES_PROFILES_DIR
+
+# Backend plugins directory
+DOTFILES_BACKENDS_DIR="${DOTFILES_ROOT}/backends"
+export DOTFILES_BACKENDS_DIR
+
+# Policy file: prefer platform-specific, fall back to generic default.
+# Can be overridden by setting DOTFILES_POLICY_FILE before sourcing env.sh.
+if [[ -z "${DOTFILES_POLICY_FILE:-}" ]]; then
+    _policy_candidate="${DOTFILES_ROOT}/policies/default.${DOTFILES_PLATFORM}.yaml"
+    if [[ -f "$_policy_candidate" ]]; then
+        DOTFILES_POLICY_FILE="$_policy_candidate"
+    else
+        DOTFILES_POLICY_FILE="${DOTFILES_ROOT}/policies/default.yaml"
+    fi
+    export DOTFILES_POLICY_FILE
+    unset _policy_candidate
+fi
