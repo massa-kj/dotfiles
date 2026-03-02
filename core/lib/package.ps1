@@ -1,10 +1,12 @@
 # -----------------------------------------------------------------------------
-# Module: package
+# Module: package (PowerShell)
 #
-# Responsibility:
-#   Provide package manager abstraction for system packages and runtimes.
+# DEPRECATED — Will be removed in Phase 4.
+# All functions now delegate to backend_registry.ps1.
+# Feature scripts should continue calling these as-is until Phase 4 migrates
+# them to use backend_registry directly.
 #
-# Public API (Stable):
+# Public API (Stable — preserved for compat):
 #   Install-Package <Name> [Manager] [Bucket]
 #   Uninstall-Package <Name> [Manager]
 #   Install-Runtime <Name> <Version>
@@ -19,54 +21,37 @@ $ErrorActionPreference = "Stop"
 
 # This library expects env.ps1 and logger.ps1 to be loaded by the caller.
 
+# Source backend_registry if not already loaded
+if (-not (Get-Command Resolve-BackendFor -ErrorAction SilentlyContinue)) {
+    . "$env:DOTFILES_ROOT\core\lib\backend_registry.ps1"
+}
+
+# ── Package API ───────────────────────────────────────────────────────────────
+
 # Get-PackageManager
-# Detect available package manager on the system.
+# Return the name of the active package backend for the current platform.
 function Get-PackageManager {
-    # Prefer Scoop
-    if (Get-Command scoop -ErrorAction SilentlyContinue) {
-        return "scoop"
-    }
-    
-    # Fallback to WinGet
-    # if (Get-Command winget -ErrorAction SilentlyContinue) {
-    #     return "winget"
-    # }
-    
-    Log-Error "No supported package manager found (scoop/winget/choco)"
-    throw "No package manager available"
+    return (Resolve-BackendFor -Kind "package" -Name "_default")
 }
 
 # Test-Package <Name> [Manager]
-# Check if a package is installed.
+# Check if a system package is installed.
 function Test-Package {
     param(
         [Parameter(Mandatory=$true)]
         [string]$Name,
         [string]$Manager = $null
     )
-    
-    if (-not $Manager) {
-        $Manager = Get-PackageManager
-    }
-    
-    switch ($Manager) {
-        "scoop" {
-            $output = & scoop list 2>&1 | Out-String
-            return $output -match [regex]::Escape($Name)
-        }
-        # "winget" {
-        #     $result = & winget list --id $Name --exact 2>$null
-        #     return $LASTEXITCODE -eq 0 -and $result -match $Name
-        # }
-        default {
-            Log-Error "Unsupported package manager: $Manager"
-            throw "Unsupported package manager: $Manager"
-        }
-    }
+
+    $backend = if ($Manager) { $Manager } else { Resolve-BackendFor -Kind "package" -Name $Name }
+    Load-Backend -BackendId $backend
+    return [bool](Backend-Call -Op "package_exists" -Args @($Name))
 }
 
 # Install-Package <Name> [Manager] [Bucket]
-# Install a package using specified or detected package manager.
+# Install a system package using the policy-resolved backend.
+# The Bucket parameter is accepted for backwards compatibility but may be
+# ignored by backends that do not support the concept.
 function Install-Package {
     param(
         [Parameter(Mandatory=$true)]
@@ -74,125 +59,47 @@ function Install-Package {
         [string]$Manager = $null,
         [string]$Bucket = $null
     )
-    
-    if (-not $Manager) {
-        $Manager = Get-PackageManager
-    }
-    
-    if (Test-Package -Name $Name -Manager $Manager) {
-        Log-Info "Package already installed: $Name"
-        return $true
-    }
-    
-    Log-Info "Installing package ($Manager): $Name"
-    
-    try {
-        switch ($Manager) {
-            "scoop" {
-                if ($Bucket) {
-                    Log-Info "Adding bucket: $Bucket"
-                    & scoop bucket add $Bucket 2>&1 | ForEach-Object { Write-Host $_ }
-                }
-                & scoop install $Name 2>&1 | ForEach-Object { Write-Host $_ }
-                if ($LASTEXITCODE -ne 0) {
-                    throw "scoop install failed with exit code $LASTEXITCODE"
-                }
-            }
-            "winget" {
-                & winget install --id $Name --exact --silent --accept-package-agreements --accept-source-agreements
-                if ($LASTEXITCODE -ne 0) {
-                    throw "winget install failed"
-                }
-            }
-            default {
-                throw "Unsupported package manager: $Manager"
-            }
-        }
-        
-        Log-Success "Package installed: $Name"
-        return $true
-    } catch {
-        Log-Error "Failed to install package: $Name - $_"
-        return $false
-    }
+
+    $backend = if ($Manager) { $Manager } else { Resolve-BackendFor -Kind "package" -Name $Name }
+    Load-Backend -BackendId $backend
+    $args = if ($Bucket) { @($Name, $Bucket) } else { @($Name) }
+    return (Backend-Call -Op "install_package" -Args $args) -ne 1
 }
 
 # Uninstall-Package <Name> [Manager]
-# Uninstall a package using specified or detected package manager.
+# Uninstall a system package using the policy-resolved backend.
 function Uninstall-Package {
     param(
         [Parameter(Mandatory=$true)]
         [string]$Name,
         [string]$Manager = $null
     )
-    
-    if (-not $Manager) {
-        $Manager = Get-PackageManager
-    }
-    
-    if (-not (Test-Package -Name $Name -Manager $Manager)) {
-        Log-Info "Package not installed: $Name"
-        return $true
-    }
-    
-    Log-Info "Uninstalling package ($Manager): $Name"
-    
-    try {
-        switch ($Manager) {
-            "scoop" {
-                & scoop uninstall $Name 2>&1 | ForEach-Object { Write-Host $_ }
-                if ($LASTEXITCODE -ne 0) {
-                    throw "scoop uninstall failed with exit code $LASTEXITCODE"
-                }
-            }
-            "winget" {
-                & winget uninstall --id $Name --exact --silent
-                if ($LASTEXITCODE -ne 0) {
-                    throw "winget uninstall failed"
-                }
-            }
-            default {
-                throw "Unsupported package manager: $Manager"
-            }
-        }
-        
-        Log-Success "Package uninstalled: $Name"
-        return $true
-    } catch {
-        Log-Error "Failed to uninstall package: $Name - $_"
-        return $false
-    }
+
+    $backend = if ($Manager) { $Manager } else { Resolve-BackendFor -Kind "package" -Name $Name }
+    Load-Backend -BackendId $backend
+    return (Backend-Call -Op "uninstall_package" -Args @($Name)) -ne 1
 }
 
+# ── Runtime API ───────────────────────────────────────────────────────────────
+
 # Test-Runtime <Name> [Version]
-# Check if a runtime is installed via mise.
+# Check if a runtime version is installed via the policy-resolved backend.
 function Test-Runtime {
     param(
         [Parameter(Mandatory=$true)]
         [string]$Name,
         [string]$Version = $null
     )
-    
-    if (-not (Get-Command mise.exe -ErrorAction SilentlyContinue)) {
-        Log-Error "mise is not available"
-        return $false
-    }
-    
-    try {
-        if ($Version) {
-            & mise.exe where "$Name@$Version" 2>$null | Out-Null
-            return $LASTEXITCODE -eq 0
-        }
-        
-        & mise.exe ls --installed $Name 2>$null | Out-Null
-        return $LASTEXITCODE -eq 0
-    } catch {
-        return $false
-    }
+
+    $backend = Resolve-BackendFor -Kind "runtime" -Name $Name
+    Load-Backend -BackendId $backend
+    $args = if ($Version) { @($Name, $Version) } else { @($Name, "") }
+    return [bool](Backend-Call -Op "runtime_exists" -Args $args)
 }
 
 # Install-Runtime <Name> <Version>
-# Install a runtime via mise and set as global default.
+# Install a runtime via the policy-resolved backend and set as global default.
+# Returns the concrete resolved version string.
 function Install-Runtime {
     param(
         [Parameter(Mandatory=$true)]
@@ -200,75 +107,24 @@ function Install-Runtime {
         [Parameter(Mandatory=$true)]
         [string]$Version
     )
-    
-    if (-not (Get-Command mise.exe -ErrorAction SilentlyContinue)) {
-        Log-Error "mise is not available"
-        return $false
-    }
-    
-    if (Test-Runtime -Name $Name -Version $Version) {
-        Log-Info "Runtime already installed: $Name@$Version"
-        return $true
-    }
-    
-    Log-Info "Installing runtime: $Name@$Version"
-    
-    try {
-        & mise.exe install "$Name@$Version"
-        if ($LASTEXITCODE -ne 0) {
-            throw "mise install failed"
-        }
-        
-        Log-Info "Setting global runtime: $Name@$Version"
-        & mise.exe use -g "$Name@$Version"
-        if ($LASTEXITCODE -ne 0) {
-            throw "mise use failed"
-        }
-        
-        # Re-activate mise to ensure all shims are updated
-        mise.exe activate pwsh
-        
-        Log-Success "Runtime installed: $Name@$Version"
-        return $true
-    } catch {
-        Log-Error "Failed to install runtime: $Name@$Version - $_"
-        return $false
-    }
+
+    $backend = Resolve-BackendFor -Kind "runtime" -Name $Name
+    Load-Backend -BackendId $backend
+    # backend prints/returns the concrete resolved version
+    return (Backend-Call -Op "install_runtime" -Args @($Name, $Version))
 }
 
 # Uninstall-Runtime <Name> [Version]
-# Uninstall a runtime via mise.
+# Uninstall a runtime via the policy-resolved backend.
 function Uninstall-Runtime {
     param(
         [Parameter(Mandatory=$true)]
         [string]$Name,
         [string]$Version = $null
     )
-    
-    if (-not (Get-Command mise.exe -ErrorAction SilentlyContinue)) {
-        Log-Error "mise is not available"
-        return $false
-    }
-    
-    $runtimeSpec = if ($Version) { "$Name@$Version" } else { $Name }
-    
-    if (-not (Test-Runtime -Name $Name -Version $Version)) {
-        Log-Info "Runtime not installed: $runtimeSpec"
-        return $true
-    }
-    
-    Log-Info "Uninstalling runtime: $runtimeSpec"
-    
-    try {
-        & mise.exe uninstall $runtimeSpec
-        if ($LASTEXITCODE -ne 0) {
-            throw "mise uninstall failed"
-        }
-        
-        Log-Success "Runtime uninstalled: $runtimeSpec"
-        return $true
-    } catch {
-        Log-Error "Failed to uninstall runtime: $runtimeSpec - $_"
-        return $false
-    }
+
+    $backend = Resolve-BackendFor -Kind "runtime" -Name $Name
+    Load-Backend -BackendId $backend
+    $args = if ($Version) { @($Name, $Version) } else { @($Name, "") }
+    return (Backend-Call -Op "uninstall_runtime" -Args $args) -ne 1
 }
