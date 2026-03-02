@@ -213,3 +213,62 @@ print_summary() {
     done
     echo ""
 }
+
+# ── Apply pipeline ────────────────────────────────────────────────────────────
+
+# orchestrator_apply <profile_file>
+# Full apply pipeline. Entry point called by cmd/apply.sh.
+#
+# Pipeline:
+#   load policy → state_init → read_profile → resolve_dependencies
+#   → calculate_diff → run_uninstall → run_install → print_summary
+orchestrator_apply() {
+    local profile_file="$1"
+
+    if [[ -z "$profile_file" ]]; then
+        log_error "orchestrator_apply: profile file is required"
+        return 1
+    fi
+
+    if [[ ! -f "$profile_file" ]]; then
+        log_error "Profile file not found: $profile_file"
+        return 1
+    fi
+
+    # Initialise (or migrate) state
+    state_init
+
+    # Parse profile
+    # Note: variable names must NOT match the nameref parameter names used inside
+    # read_profile, read_feature_metadata, resolve_dependencies, and calculate_diff
+    # to avoid bash circular name reference errors.
+    local -a _apply_features
+    read_profile "$profile_file" _apply_features || return 1
+
+    # Resolve feature metadata + topological sort
+    read_feature_metadata _apply_features || return 1
+
+    local -a _apply_sorted
+    resolve_dependencies _apply_features _apply_sorted || return 1
+
+    # Diff against current state
+    local -a _apply_install _apply_uninstall _apply_reinstall
+    calculate_diff _apply_sorted _apply_install _apply_uninstall _apply_reinstall
+
+    # Execute: uninstall removed → uninstall-before-reinstall → install new → reinstall
+    run_uninstall _apply_uninstall || return 1
+
+    if [[ ${#_apply_reinstall[@]} -gt 0 ]]; then
+        log_task "Preparing features for reinstall..."
+        run_uninstall _apply_reinstall || return 1
+    fi
+
+    run_install _apply_install || return 1
+
+    if [[ ${#_apply_reinstall[@]} -gt 0 ]]; then
+        log_task "Reinstalling features with version updates..."
+        run_install _apply_reinstall || return 1
+    fi
+
+    print_summary
+}

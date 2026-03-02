@@ -284,3 +284,59 @@ function Show-Summary {
     
     Write-Host ""
 }
+
+# ── Apply pipeline ────────────────────────────────────────────────────────────
+
+# Invoke-OrchestratorApply <ProfileFile>
+# Full apply pipeline. Entry point called by cmd/apply.ps1.
+#
+# Pipeline:
+#   load policy → State-Init → Read-Profile → Resolve-Dependencies
+#   → Get-FeatureDiff → Invoke-Uninstall → Invoke-Install → Show-Summary
+function Invoke-OrchestratorApply {
+    param(
+        [Parameter(Mandatory=$true)]
+        [string]$ProfileFile
+    )
+
+    if (-not (Test-Path $ProfileFile)) {
+        Log-Error "Profile file not found: $ProfileFile"
+        exit 1
+    }
+
+    # Initialise (or migrate) state
+    if (-not (State-Init)) {
+        Log-Error "Failed to initialise state"
+        exit 1
+    }
+
+    # Parse profile
+    $desiredFeatures = Read-Profile -ProfileFile $ProfileFile
+    if ($null -eq $desiredFeatures) { exit 1 }
+
+    # Resolve feature metadata + topological sort
+    if (-not (Read-FeatureMetadata -Features $desiredFeatures)) { exit 1 }
+
+    $sortedFeatures = Resolve-Dependencies -DesiredFeatures $desiredFeatures
+    if ($null -eq $sortedFeatures) { exit 1 }
+
+    # Diff against current state
+    $diff = Get-FeatureDiff -SortedFeatures $sortedFeatures
+
+    # Execute: uninstall removed → prep reinstalls → install new → reinstall
+    if (-not (Invoke-Uninstall -Features $diff.ToUninstall)) { exit 1 }
+
+    if ($diff.ToReinstall.Count -gt 0) {
+        Log-Task "Preparing features for reinstall..."
+        if (-not (Invoke-Uninstall -Features $diff.ToReinstall)) { exit 1 }
+    }
+
+    if (-not (Invoke-Install -Features $diff.ToInstall)) { exit 1 }
+
+    if ($diff.ToReinstall.Count -gt 0) {
+        Log-Task "Reinstalling features with version updates..."
+        if (-not (Invoke-Install -Features $diff.ToReinstall)) { exit 1 }
+    }
+
+    Show-Summary
+}
