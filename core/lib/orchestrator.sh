@@ -33,6 +33,18 @@ if [[ "$(type -t backend_registry_load_policy)" != "function" ]]; then
     source "${DOTFILES_ROOT}/core/lib/backend_registry.sh"
 fi
 
+# Lazily source planner if not already loaded
+if [[ "$(type -t planner_run)" != "function" ]]; then
+    # shellcheck source=core/lib/planner.sh
+    source "${DOTFILES_ROOT}/core/lib/planner.sh"
+fi
+
+# Lazily source executor if not already loaded
+if [[ "$(type -t executor_run)" != "function" ]]; then
+    # shellcheck source=core/lib/executor.sh
+    source "${DOTFILES_ROOT}/core/lib/executor.sh"
+fi
+
 # Global variable to cache profile data
 declare -g _PROFILE_DATA=""
 
@@ -234,7 +246,7 @@ print_summary() {
 #
 # Pipeline:
 #   load policy → state_init → read_profile → resolve_dependencies
-#   → calculate_diff → run_uninstall → run_install → print_summary
+#   → planner_run → executor_run → print_summary
 orchestrator_apply() {
     local profile_file="$1"
 
@@ -255,9 +267,6 @@ orchestrator_apply() {
     state_init
 
     # Parse profile
-    # Note: variable names must NOT match the nameref parameter names used inside
-    # read_profile, read_feature_metadata, resolve_dependencies, and calculate_diff
-    # to avoid bash circular name reference errors.
     local -a _apply_features
     read_profile "$profile_file" _apply_features || return 1
 
@@ -267,24 +276,12 @@ orchestrator_apply() {
     local -a _apply_sorted
     resolve_dependencies _apply_features _apply_sorted || return 1
 
-    # Diff against current state
-    local -a _apply_install _apply_uninstall _apply_reinstall
-    calculate_diff _apply_sorted _apply_install _apply_uninstall _apply_reinstall
+    # Plan: pure computation of what needs to happen
+    local plan_json
+    plan_json=$(planner_run "$profile_file" _apply_sorted) || return 1
 
-    # Execute: uninstall removed → uninstall-before-reinstall → install new → reinstall
-    run_uninstall _apply_uninstall || return 1
-
-    if [[ ${#_apply_reinstall[@]} -gt 0 ]]; then
-        log_task "Preparing features for reinstall..."
-        run_uninstall _apply_reinstall || return 1
-    fi
-
-    run_install _apply_install || return 1
-
-    if [[ ${#_apply_reinstall[@]} -gt 0 ]]; then
-        log_task "Reinstalling features with version updates..."
-        run_install _apply_reinstall || return 1
-    fi
+    # Execute: impure — calls scripts, commits state
+    executor_run "$plan_json" || return 1
 
     print_summary
 }

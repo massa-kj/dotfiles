@@ -33,6 +33,16 @@ if (-not (Get-Command Backend-Registry-LoadPolicy -ErrorAction SilentlyContinue)
     . "$env:DOTFILES_ROOT\core\lib\backend_registry.ps1"
 }
 
+# Lazily source planner if not already loaded
+if (-not (Get-Command Invoke-PlannerRun -ErrorAction SilentlyContinue)) {
+    . "$env:DOTFILES_ROOT\core\lib\planner.ps1"
+}
+
+# Lazily source executor if not already loaded
+if (-not (Get-Command Invoke-ExecutorRun -ErrorAction SilentlyContinue)) {
+    . "$env:DOTFILES_ROOT\core\lib\executor.ps1"
+}
+
 # Module-scoped profile cache
 $script:ProfileData = ""
 
@@ -277,7 +287,7 @@ function Show-Summary {
 #
 # Pipeline:
 #   load policy → State-Init → Read-Profile → Resolve-Dependencies
-#   → Get-FeatureDiff → Invoke-Uninstall → Invoke-Install → Show-Summary
+#   → Invoke-PlannerRun → Invoke-ExecutorRun → Show-Summary
 function Invoke-OrchestratorApply {
     param(
         [Parameter(Mandatory=$true)]
@@ -308,23 +318,11 @@ function Invoke-OrchestratorApply {
     $sortedFeatures = Resolve-Dependencies -DesiredFeatures $desiredFeatures
     if ($null -eq $sortedFeatures) { exit 1 }
 
-    # Diff against current state
-    $diff = Get-FeatureDiff -SortedFeatures $sortedFeatures
+    # Plan: pure computation of what needs to happen
+    $planJson = Invoke-PlannerRun -ProfileFile $ProfileFile -SortedFeatures $sortedFeatures
 
-    # Execute: uninstall removed → prep reinstalls → install new → reinstall
-    if (-not (Invoke-Uninstall -Features $diff.ToUninstall)) { exit 1 }
-
-    if ($diff.ToReinstall.Count -gt 0) {
-        Log-Task "Preparing features for reinstall..."
-        if (-not (Invoke-Uninstall -Features $diff.ToReinstall)) { exit 1 }
-    }
-
-    if (-not (Invoke-Install -Features $diff.ToInstall)) { exit 1 }
-
-    if ($diff.ToReinstall.Count -gt 0) {
-        Log-Task "Reinstalling features with version updates..."
-        if (-not (Invoke-Install -Features $diff.ToReinstall)) { exit 1 }
-    }
+    # Execute: impure — calls scripts, commits state
+    Invoke-ExecutorRun -PlanJson $planJson
 
     Show-Summary
 }
