@@ -2,18 +2,30 @@
 # Module: state
 #
 # Responsibility:
-#   Manage state file operations safely with atomic updates.
+#   Manage state file (v2) with atomic writes, migration, and patch operations.
 #
-# Public API (Stable):
+# Stable Public API:
+#   State-Load
+#   State-Validate [Mode] [Json]         Mode = "load" | "execute"
+#   State-CommitAtomic <StateObject>
+#   State-QueryFeature <Feature>
+#   State-QueryResources <Feature>
+#   State-PatchBegin
+#   State-PatchAddResource <Feature> <ResourceObject>
+#   State-PatchRemoveFeature <Feature>
+#   State-PatchFinalize
+#   State-Migrate
+#
+# Compat API (Phase 1 — will be removed in Phase 4):
 #   State-Init
 #   State-HasFeature <Feature>
-#   State-AddPackage <Feature> <Package>
-#   State-AddFile <Feature> <File>
+#   State-ListFeatures
 #   State-GetPackages <Feature>
 #   State-GetFiles <Feature>
 #   State-HasFile <File>
 #   State-RemoveFeature <Feature>
-#   State-ListFeatures
+#   State-AddPackage <Feature> <Package>
+#   State-AddFile <Feature> <File>
 #   State-SetRuntime <Feature> <Key> <Value>
 #   State-GetRuntime <Feature> <Key>
 #   State-HasRuntime <Feature> <Key>
@@ -22,297 +34,630 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-# State-Init
-# Initialize or validate state file.
-function State-Init {
-    
+# ── Private state ─────────────────────────────────────────────────────────────
+
+# In-memory cache of the authoritative state (PSCustomObject).
+$script:StateData = $null
+
+# Working copy for patch operations (deep clone).
+$script:StatePatchData = $null
+
+# ── Internal helpers ──────────────────────────────────────────────────────────
+
+function _State-EnsureLoaded {
+    if ($null -eq $script:StateData) {
+        State-Load | Out-Null
+    }
+}
+
+# Deep-clone a PSCustomObject via JSON round-trip.
+function _State-DeepClone {
+    param([Parameter(Mandatory=$true)] $Obj)
+    return $Obj | ConvertTo-Json -Depth 20 | ConvertFrom-Json
+}
+
+# Convert PSCustomObject to canonical JSON string.
+function _State-ToJson {
+    param([Parameter(Mandatory=$true)] $Obj)
+    return $Obj | ConvertTo-Json -Depth 20
+}
+
+# ── Stable Core API ───────────────────────────────────────────────────────────
+
+# State-Load
+# Load state from disk into in-memory cache.
+# If v1 is detected, migrate automatically and commit.
+# Creates empty v2 state if the file does not exist.
+function State-Load {
     if (-not $global:DOTFILES_STATE_FILE) {
-        Log-Error "DOTFILES_STATE_FILE is not set"
+        Log-Error "State-Load: DOTFILES_STATE_FILE is not set"
         return $false
     }
 
-    # Create state directory if it doesn't exist
-    $stateDir = Split-Path -Parent $global:DOTFILES_STATE_FILE
-    if (-not (Test-Path $stateDir)) {
-        New-Item -ItemType Directory -Path $stateDir -Force | Out-Null
+    $path = $global:DOTFILES_STATE_FILE
+    $dir  = Split-Path -Parent $path
+
+    if (-not (Test-Path $dir)) {
+        New-Item -ItemType Directory -Path $dir -Force | Out-Null
     }
 
-    # Initialize state file if it doesn't exist
-    if (-not (Test-Path $global:DOTFILES_STATE_FILE)) {
-        $initialState = @{
-            version = 1
-            features = @{}
-        }
-        $initialState | ConvertTo-Json -Depth 10 | Set-Content -Path $global:DOTFILES_STATE_FILE -Encoding UTF8
+    if (-not (Test-Path $path)) {
+        $script:StateData = [PSCustomObject]@{ version = 2; features = [PSCustomObject]@{} }
+        _State-ToJson $script:StateData | Set-Content -Path $path -Encoding UTF8
+        return $true
     }
 
-    # Validate JSON
+    # Validate JSON parsability
     try {
-        Get-Content -Path $global:DOTFILES_STATE_FILE -Raw | ConvertFrom-Json | Out-Null
+        $script:StateData = Get-Content -Path $path -Raw | ConvertFrom-Json
     } catch {
-        Log-Error "state file is corrupted: $global:DOTFILES_STATE_FILE"
+        Log-Error "State-Load: state file is not valid JSON: $path"
+        return $false
+    }
+
+    $ver = $script:StateData.version
+
+    if ($ver -eq 1) {
+        Log-Info "State-Load: v1 state detected, migrating to v2..."
+        if (-not (State-Migrate)) {
+            Log-Error "State-Load: migration failed"
+            return $false
+        }
+    } elseif ($ver -ne 2) {
+        Log-Error "State-Load: unknown state version: $ver"
         return $false
     }
 
     return $true
 }
 
+# State-Validate [Mode] [StateObject]
+# Validate structural invariants.
+#   Mode=load    - allow unknown resource kinds; check structural sanity.
+#   Mode=execute - additionally abort on features containing unknown kinds.
+function State-Validate {
+    param(
+        [string]$Mode = "load",
+        $StateObject = $null
+    )
+
+    $obj = if ($null -ne $StateObject) { $StateObject } else { $script:StateData }
+
+    if ($null -eq $obj) {
+        Log-Error "State-Validate: no state loaded"
+        return $false
+    }
+
+    # 1. version MUST be 2
+    if ($obj.version -ne 2) {
+        Log-Error "State-Validate: version MUST be 2, got: $($obj.version)"
+        return $false
+    }
+
+    # 2. features MUST exist and be an object
+    if ($null -eq $obj.features) {
+        Log-Error "State-Validate: .features must exist"
+        return $false
+    }
+
+    $knownKinds = @("package", "runtime", "fs")
+    $allFsPaths = [System.Collections.Generic.List[string]]::new()
+
+    foreach ($prop in $obj.features.PSObject.Properties) {
+        $featureId = $prop.Name
+        $featureVal = $prop.Value
+
+        # 3. Each feature entry MUST have resources array
+        if ($null -eq $featureVal.resources) {
+            Log-Error "State-Validate: feature ${featureId}: resources must be an array"
+            return $false
+        }
+
+        $seenIds = [System.Collections.Generic.HashSet[string]]::new()
+
+        foreach ($res in $featureVal.resources) {
+            # 4. Each resource MUST have kind and id
+            if ([string]::IsNullOrEmpty($res.kind) -or [string]::IsNullOrEmpty($res.id)) {
+                Log-Error "State-Validate: feature ${featureId}: resource missing kind or id"
+                return $false
+            }
+
+            # 5. Within a feature: no duplicate resource.id
+            if (-not $seenIds.Add($res.id)) {
+                Log-Error "State-Validate: feature ${featureId}: duplicate resource id: $($res.id)"
+                return $false
+            }
+
+            # Collect fs paths for cross-feature duplicate check
+            if ($res.kind -eq "fs") {
+                # 7. fs.path MUST be absolute
+                if (-not ($res.fs.path -match '^(/|[A-Za-z]:\\)')) {
+                    Log-Error "State-Validate: fs.path not absolute: $($res.fs.path)"
+                    return $false
+                }
+                $allFsPaths.Add($res.fs.path)
+            }
+
+            # mode=execute: reject unknown kinds
+            if ($Mode -eq "execute" -and ($knownKinds -notcontains $res.kind)) {
+                Log-Error "State-Validate(execute): feature ${featureId}: unknown kind: $($res.kind)"
+                return $false
+            }
+        }
+    }
+
+    # 6. Across all features: no duplicate fs.path
+    $dupPaths = $allFsPaths | Group-Object | Where-Object { $_.Count -gt 1 }
+    if ($dupPaths) {
+        foreach ($dup in $dupPaths) {
+            Log-Error "State-Validate: duplicate fs.path across features: $($dup.Name)"
+        }
+        return $false
+    }
+
+    return $true
+}
+
+# State-CommitAtomic <StateObject>
+# Write a new state atomically: write to .tmp → validate → atomic rename.
+function State-CommitAtomic {
+    param(
+        [Parameter(Mandatory=$true)]
+        $StateObject
+    )
+
+    if (-not $global:DOTFILES_STATE_FILE) {
+        Log-Error "State-CommitAtomic: DOTFILES_STATE_FILE is not set"
+        return $false
+    }
+
+    $path = $global:DOTFILES_STATE_FILE
+    $tmp  = "$path.tmp"
+
+    try {
+        _State-ToJson $StateObject | Set-Content -Path $tmp -Encoding UTF8
+    } catch {
+        Log-Error "State-CommitAtomic: failed to write tmp file: $_"
+        Remove-Item -Path $tmp -ErrorAction SilentlyContinue
+        return $false
+    }
+
+    # Validate before committing
+    $tmpObj = Get-Content -Path $tmp -Raw | ConvertFrom-Json
+    if (-not (State-Validate -Mode "load" -StateObject $tmpObj)) {
+        Log-Error "State-CommitAtomic: validation failed, aborting commit"
+        Remove-Item -Path $tmp -ErrorAction SilentlyContinue
+        return $false
+    }
+
+    # Atomic rename (Move-Item -Force replaces destination)
+    try {
+        Move-Item -Path $tmp -Destination $path -Force
+    } catch {
+        Log-Error "State-CommitAtomic: atomic rename failed: $_"
+        Remove-Item -Path $tmp -ErrorAction SilentlyContinue
+        return $false
+    }
+
+    # Update in-memory cache
+    $script:StateData = $tmpObj
+    return $true
+}
+
+# State-QueryFeature <Feature>
+# Return the feature entry PSCustomObject, or $null if not found.
+function State-QueryFeature {
+    param([Parameter(Mandatory=$true)] [string]$Feature)
+    _State-EnsureLoaded
+    $prop = $script:StateData.features.PSObject.Properties[$Feature]
+    if ($null -ne $prop) { return $prop.Value }
+    return $null
+}
+
+# State-QueryResources <Feature>
+# Return the resources array for a feature, or empty array if not found.
+function State-QueryResources {
+    param([Parameter(Mandatory=$true)] [string]$Feature)
+    _State-EnsureLoaded
+    $feat = State-QueryFeature -Feature $Feature
+    if ($null -eq $feat) { return @() }
+    return @($feat.resources)
+}
+
+# ── Patch Operations ──────────────────────────────────────────────────────────
+
+# State-PatchBegin
+# Initialize a patch working copy from the current state cache.
+function State-PatchBegin {
+    _State-EnsureLoaded
+    $script:StatePatchData = _State-DeepClone $script:StateData
+}
+
+# State-PatchAddResource <Feature> <ResourceObject>
+# Add (or replace by id) a resource in the patch working copy.
+# Creates the feature entry if it does not exist.
+function State-PatchAddResource {
+    param(
+        [Parameter(Mandatory=$true)] [string]$Feature,
+        [Parameter(Mandatory=$true)] $ResourceObject
+    )
+
+    if ($null -eq $script:StatePatchData) {
+        Log-Error "State-PatchAddResource: no patch in progress; call State-PatchBegin first"
+        return
+    }
+
+    # Create feature entry if missing
+    if ($null -eq $script:StatePatchData.features.PSObject.Properties[$Feature]) {
+        $script:StatePatchData.features | Add-Member -MemberType NoteProperty `
+            -Name $Feature -Value ([PSCustomObject]@{ resources = @() })
+    }
+
+    $feat = $script:StatePatchData.features.$Feature
+    # Replace existing resource with same id, or append
+    $newResources = @($feat.resources | Where-Object { $_.id -ne $ResourceObject.id }) + @($ResourceObject)
+    $feat.resources = $newResources
+}
+
+# State-PatchRemoveFeature <Feature>
+# Remove a feature entry from the patch working copy.
+function State-PatchRemoveFeature {
+    param([Parameter(Mandatory=$true)] [string]$Feature)
+
+    if ($null -eq $script:StatePatchData) {
+        Log-Error "State-PatchRemoveFeature: no patch in progress; call State-PatchBegin first"
+        return
+    }
+
+    $script:StatePatchData.features.PSObject.Properties.Remove($Feature)
+}
+
+# State-PatchFinalize
+# Commit the patch working copy atomically and clear the buffer.
+function State-PatchFinalize {
+    if ($null -eq $script:StatePatchData) {
+        Log-Error "State-PatchFinalize: no patch in progress"
+        return $false
+    }
+
+    $result = State-CommitAtomic -StateObject $script:StatePatchData
+    $script:StatePatchData = $null
+    return $result
+}
+
+# ── Migration ─────────────────────────────────────────────────────────────────
+
+# State-Migrate
+# Migrate the in-memory v1 state to v2: backup → transform → commit atomically.
+# Called automatically by State-Load; may also be called via `dotfiles migrate-state`.
+function State-Migrate {
+    $path   = $global:DOTFILES_STATE_FILE
+    $backup = "$path.bak"
+
+    if (Test-Path $path) {
+        try {
+            Copy-Item -Path $path -Destination $backup -Force
+            Log-Info "State-Migrate: backup created: $backup"
+        } catch {
+            Log-Error "State-Migrate: failed to create backup: $_"
+            return $false
+        }
+    }
+
+    $v2 = _Invoke-MigrateV1ToV2 -V1Object $script:StateData
+    if ($null -eq $v2) {
+        Log-Error "State-Migrate: transformation failed; restore from: $backup"
+        return $false
+    }
+
+    if (-not (State-CommitAtomic -StateObject $v2)) {
+        Log-Error "State-Migrate: commit failed; restore from: $backup"
+        return $false
+    }
+
+    Log-Info "State-Migrate: migration to v2 complete"
+    return $true
+}
+
+# _Invoke-MigrateV1ToV2 <V1Object>
+# Pure transformation: convert v1 PSCustomObject to v2 format.
+# Returns the v2 PSCustomObject.
+#
+# v1 → v2 mapping:
+#   packages[]         → kind:package resources
+#   files[]            → kind:fs resources  (entry_type/op inferred from filesystem)
+#   runtime.version    → kind:runtime resource (runtime name = feature_id)
+#   "{fid}@{rv}"       → skipped when runtime.version matches
+function _Invoke-MigrateV1ToV2 {
+    param([Parameter(Mandatory=$true)] $V1Object)
+
+    $v2Features = [PSCustomObject]@{}
+
+    foreach ($prop in $V1Object.features.PSObject.Properties) {
+        $fid  = $prop.Name
+        $feat = $prop.Value
+
+        $rv       = if ($feat.PSObject.Properties['runtime'] -and $feat.runtime.PSObject.Properties['version']) { $feat.runtime.version } else { $null }
+        $packages = if ($feat.PSObject.Properties['packages']) { @($feat.packages) } else { @() }
+        $files    = if ($feat.PSObject.Properties['files'])    { @($feat.files)    } else { @() }
+
+        $resources = [System.Collections.Generic.List[PSCustomObject]]::new()
+
+        # ── package resources ──────────────────────────────────────────────
+        foreach ($pkg in $packages) {
+            if ($null -ne $rv -and $pkg -eq "${fid}@${rv}") { continue }  # captured by runtime resource
+
+            $resources.Add([PSCustomObject]@{
+                kind    = "package"
+                id      = "pkg:$pkg"
+                backend = "unknown"
+                package = [PSCustomObject]@{ name = $pkg; version = $null }
+            })
+        }
+
+        # ── fs resources ──────────────────────────────────────────────────
+        foreach ($filePath in $files) {
+            $entryType = "file"
+            $op        = "copy"
+
+            if (Test-Path $filePath -PathType Any) {
+                $item = Get-Item -Path $filePath -Force -ErrorAction SilentlyContinue
+                if ($null -ne $item) {
+                    if ($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) {
+                        $entryType = "symlink"
+                        $op        = "link"
+                    } elseif ($item.PSIsContainer) {
+                        $entryType = "dir"
+                        $op        = "copy"
+                    } else {
+                        $entryType = "file"
+                        $op        = "copy"
+                    }
+                }
+            }
+
+            $resources.Add([PSCustomObject]@{
+                kind = "fs"
+                id   = "fs:$filePath"
+                fs   = [PSCustomObject]@{
+                    path       = $filePath
+                    entry_type = $entryType
+                    op         = $op
+                }
+            })
+        }
+
+        # ── runtime resource ──────────────────────────────────────────────
+        if ($null -ne $rv) {
+            $resources.Add([PSCustomObject]@{
+                kind    = "runtime"
+                id      = "rt:${fid}@${rv}"
+                backend = "unknown"
+                runtime = [PSCustomObject]@{ name = $fid; version = $rv }
+            })
+        }
+
+        $v2Features | Add-Member -MemberType NoteProperty -Name $fid -Value (
+            [PSCustomObject]@{ resources = $resources.ToArray() }
+        )
+    }
+
+    return [PSCustomObject]@{ version = 2; features = $v2Features }
+}
+
+# ── Compat API ────────────────────────────────────────────────────────────────
+# These functions provide backwards compatibility for feature scripts written
+# against the v1 API. Will be removed when Phase 4 rewrites feature scripts.
+
+# State-Init
+# Initialize or load state. Calls State-Load (which auto-migrates v1 if needed).
+function State-Init {
+    return State-Load
+}
+
 # State-HasFeature <Feature>
-# Check if a feature exists in state.
 function State-HasFeature {
-    param(
-        [Parameter(Mandatory=$true)]
-        [string]$Feature
-    )
-
-    $state = Get-Content -Path $global:DOTFILES_STATE_FILE -Raw | ConvertFrom-Json
-    return $null -ne $state.features.PSObject.Properties[$Feature]
+    param([Parameter(Mandatory=$true)] [string]$Feature)
+    _State-EnsureLoaded
+    return $null -ne $script:StateData.features.PSObject.Properties[$Feature]
 }
 
-# State-AddPackage <Feature> <Package>
-# Register a package for a feature with deduplication.
-function State-AddPackage {
-    param(
-        [Parameter(Mandatory=$true)]
-        [string]$Feature,
-        [Parameter(Mandatory=$true)]
-        [string]$Package
-    )
-
-    $state = Get-Content -Path $global:DOTFILES_STATE_FILE -Raw | ConvertFrom-Json
-
-    # Initialize feature if it doesn't exist
-    if (-not $state.features.PSObject.Properties[$Feature]) {
-        $state.features | Add-Member -MemberType NoteProperty -Name $Feature -Value @{
-            packages = @()
-            files = @()
-        }
-    }
-
-    # Add package with deduplication
-    $packages = $state.features.$Feature.packages
-    if ($packages -notcontains $Package) {
-        $state.features.$Feature.packages += $Package
-    }
-
-    # Save state
-    try {
-        $state | ConvertTo-Json -Depth 10 | Set-Content -Path $global:DOTFILES_STATE_FILE -Encoding UTF8
-        return $true
-    } catch {
-        Log-Error "state_add_package: failed to add package - $_"
-        return $false
-    }
-}
-
-# State-AddFile <Feature> <File>
-# Register a file path for a feature with deduplication.
-function State-AddFile {
-    param(
-        [Parameter(Mandatory=$true)]
-        [string]$Feature,
-        [Parameter(Mandatory=$true)]
-        [string]$File
-    )
-
-    $state = Get-Content -Path $global:DOTFILES_STATE_FILE -Raw | ConvertFrom-Json
-
-    # Initialize feature if it doesn't exist
-    if (-not $state.features.PSObject.Properties[$Feature]) {
-        $state.features | Add-Member -MemberType NoteProperty -Name $Feature -Value @{
-            packages = @()
-            files = @()
-        }
-    }
-
-    # Add file with deduplication
-    $files = $state.features.$Feature.files
-    if ($files -notcontains $File) {
-        $state.features.$Feature.files += $File
-    }
-
-    # Save state
-    try {
-        $state | ConvertTo-Json -Depth 10 | Set-Content -Path $global:DOTFILES_STATE_FILE -Encoding UTF8
-        return $true
-    } catch {
-        Log-Error "state_add_file: failed to add file - $_"
-        return $false
-    }
+# State-ListFeatures
+function State-ListFeatures {
+    _State-EnsureLoaded
+    return @($script:StateData.features.PSObject.Properties | ForEach-Object { $_.Name })
 }
 
 # State-GetPackages <Feature>
-# Retrieve package list for a feature.
+# Return package names (strings) for the feature.
 function State-GetPackages {
-    param(
-        [Parameter(Mandatory=$true)]
-        [string]$Feature
-    )
-
-    if (-not (State-HasFeature -Feature $Feature)) {
-        return @()
-    }
-
-    $state = Get-Content -Path $global:DOTFILES_STATE_FILE -Raw | ConvertFrom-Json
-    return $state.features.$Feature.packages
+    param([Parameter(Mandatory=$true)] [string]$Feature)
+    $resources = State-QueryResources -Feature $Feature
+    return @($resources | Where-Object { $_.kind -eq "package" } | ForEach-Object { $_.package.name })
 }
 
 # State-GetFiles <Feature>
-# Retrieve file path list for a feature.
+# Return file paths (strings) for the feature.
 function State-GetFiles {
-    param(
-        [Parameter(Mandatory=$true)]
-        [string]$Feature
-    )
-
-    if (-not (State-HasFeature -Feature $Feature)) {
-        return @()
-    }
-
-    $state = Get-Content -Path $global:DOTFILES_STATE_FILE -Raw | ConvertFrom-Json
-    return $state.features.$Feature.files
+    param([Parameter(Mandatory=$true)] [string]$Feature)
+    $resources = State-QueryResources -Feature $Feature
+    return @($resources | Where-Object { $_.kind -eq "fs" } | ForEach-Object { $_.fs.path })
 }
 
 # State-HasFile <File>
-# Check if a file path is registered under any feature.
 function State-HasFile {
-    param(
-        [Parameter(Mandatory=$true)]
-        [string]$File
-    )
-
-    $features = State-ListFeatures
-    foreach ($feature in $features) {
-        $files = State-GetFiles -Feature $feature
-        if ($files -contains $File) {
-            return $true
+    param([Parameter(Mandatory=$true)] [string]$File)
+    _State-EnsureLoaded
+    foreach ($prop in $script:StateData.features.PSObject.Properties) {
+        foreach ($res in @($prop.Value.resources)) {
+            if ($res.kind -eq "fs" -and $res.fs.path -eq $File) { return $true }
         }
     }
     return $false
 }
 
 # State-RemoveFeature <Feature>
-# Remove a feature entry from state.
 function State-RemoveFeature {
-    param(
-        [Parameter(Mandatory=$true)]
-        [string]$Feature
-    )
+    param([Parameter(Mandatory=$true)] [string]$Feature)
+    _State-EnsureLoaded
 
     if (-not (State-HasFeature -Feature $Feature)) {
-        Log-Warn "state_remove_feature: feature not found: $Feature"
+        Log-Warn "State-RemoveFeature: feature not found: $Feature"
         return $true
     }
 
-    $state = Get-Content -Path $global:DOTFILES_STATE_FILE -Raw | ConvertFrom-Json
-    $state.features.PSObject.Properties.Remove($Feature)
-
-    # Save state
-    try {
-        $state | ConvertTo-Json -Depth 10 | Set-Content -Path $global:DOTFILES_STATE_FILE -Encoding UTF8
-        return $true
-    } catch {
-        Log-Error "state_remove_feature: failed to remove feature - $_"
-        return $false
-    }
+    $newState = _State-DeepClone $script:StateData
+    $newState.features.PSObject.Properties.Remove($Feature)
+    return State-CommitAtomic -StateObject $newState
 }
 
-# State-ListFeatures
-# Retrieve all installed feature names.
-function State-ListFeatures {
-    if (-not (Test-Path $global:DOTFILES_STATE_FILE)) {
-        return @()
-    }
-
-    $state = Get-Content -Path $global:DOTFILES_STATE_FILE -Raw | ConvertFrom-Json
-    return @($state.features.PSObject.Properties | ForEach-Object { $_.Name })
-}
-
-# State-SetRuntime <Feature> <Key> <Value>
-# Set runtime metadata for a feature.
-function State-SetRuntime {
+# State-AddPackage <Feature> <Package>
+# Register a package resource and commit atomically.
+function State-AddPackage {
     param(
-        [Parameter(Mandatory=$true)]
-        [string]$Feature,
-        [Parameter(Mandatory=$true)]
-        [string]$Key,
-        [Parameter(Mandatory=$true)]
-        [string]$Value
+        [Parameter(Mandatory=$true)] [string]$Feature,
+        [Parameter(Mandatory=$true)] [string]$Package
     )
+    _State-EnsureLoaded
 
-    $state = Get-Content -Path $global:DOTFILES_STATE_FILE -Raw | ConvertFrom-Json
+    $resource = [PSCustomObject]@{
+        kind    = "package"
+        id      = "pkg:$Package"
+        backend = "unknown"
+        package = [PSCustomObject]@{ name = $Package; version = $null }
+    }
 
-    # Initialize feature if it doesn't exist
-    if (-not $state.features.PSObject.Properties[$Feature]) {
-        $state.features | Add-Member -MemberType NoteProperty -Name $Feature -Value @{
-            packages = @()
-            files = @()
+    $newState = _State-DeepClone $script:StateData
+
+    if ($null -eq $newState.features.PSObject.Properties[$Feature]) {
+        $newState.features | Add-Member -MemberType NoteProperty -Name $Feature `
+            -Value ([PSCustomObject]@{ resources = @() })
+    }
+
+    $feat = $newState.features.$Feature
+    $newResources = @($feat.resources | Where-Object { $_.id -ne $resource.id }) + @($resource)
+    $feat.resources = $newResources
+
+    return State-CommitAtomic -StateObject $newState
+}
+
+# State-AddFile <Feature> <File>
+# Register an fs resource and commit atomically.
+# entry_type and op are inferred from the filesystem at call time.
+function State-AddFile {
+    param(
+        [Parameter(Mandatory=$true)] [string]$Feature,
+        [Parameter(Mandatory=$true)] [string]$File
+    )
+    _State-EnsureLoaded
+
+    # Infer entry_type and op from actual filesystem state
+    $entryType = "file"
+    $op        = "copy"
+
+    if (Test-Path $File -PathType Any) {
+        $item = Get-Item -Path $File -Force -ErrorAction SilentlyContinue
+        if ($null -ne $item) {
+            if ($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) {
+                $entryType = "symlink"
+                $op        = "link"
+            } elseif ($item.PSIsContainer) {
+                $entryType = "dir"
+                $op        = "copy"
+            }
         }
     }
 
-    # Initialize runtime object if it doesn't exist
-    if (-not $state.features.$Feature.PSObject.Properties['runtime']) {
-        $state.features.$Feature | Add-Member -MemberType NoteProperty -Name runtime -Value @{}
+    $resource = [PSCustomObject]@{
+        kind = "fs"
+        id   = "fs:$File"
+        fs   = [PSCustomObject]@{
+            path       = $File
+            entry_type = $entryType
+            op         = $op
+        }
     }
 
-    # Set runtime metadata
-    if ($state.features.$Feature.runtime.PSObject.Properties[$Key]) {
-        $state.features.$Feature.runtime.$Key = $Value
-    } else {
-        $state.features.$Feature.runtime | Add-Member -MemberType NoteProperty -Name $Key -Value $Value
+    $newState = _State-DeepClone $script:StateData
+
+    if ($null -eq $newState.features.PSObject.Properties[$Feature]) {
+        $newState.features | Add-Member -MemberType NoteProperty -Name $Feature `
+            -Value ([PSCustomObject]@{ resources = @() })
     }
 
-    # Save state
-    try {
-        $state | ConvertTo-Json -Depth 10 | Set-Content -Path $global:DOTFILES_STATE_FILE -Encoding UTF8
+    $feat = $newState.features.$Feature
+    $newResources = @($feat.resources | Where-Object { $_.id -ne $resource.id }) + @($resource)
+    $feat.resources = $newResources
+
+    return State-CommitAtomic -StateObject $newState
+}
+
+# State-SetRuntime <Feature> <Key> <Value>
+# Register (or replace) a runtime resource for a feature.
+# Only Key="version" is currently used; runtime name is derived from the feature id.
+function State-SetRuntime {
+    param(
+        [Parameter(Mandatory=$true)] [string]$Feature,
+        [Parameter(Mandatory=$true)] [string]$Key,
+        [Parameter(Mandatory=$true)] [string]$Value
+    )
+    _State-EnsureLoaded
+
+    if ($Key -ne "version") {
+        # Non-version keys are not mapped to v2 resources; silently ignore.
         return $true
-    } catch {
-        Log-Error "State-SetRuntime: failed to set runtime metadata - $_"
-        return $false
     }
+
+    $resource = [PSCustomObject]@{
+        kind    = "runtime"
+        id      = "rt:${Feature}@${Value}"
+        backend = "unknown"
+        runtime = [PSCustomObject]@{ name = $Feature; version = $Value }
+    }
+
+    $newState = _State-DeepClone $script:StateData
+
+    if ($null -eq $newState.features.PSObject.Properties[$Feature]) {
+        $newState.features | Add-Member -MemberType NoteProperty -Name $Feature `
+            -Value ([PSCustomObject]@{ resources = @() })
+    }
+
+    $feat = $newState.features.$Feature
+    # Remove any existing runtime resource before adding the new one (handles version change)
+    $newResources = @($feat.resources | Where-Object { $_.kind -ne "runtime" }) + @($resource)
+    $feat.resources = $newResources
+
+    return State-CommitAtomic -StateObject $newState
 }
 
 # State-GetRuntime <Feature> <Key>
-# Get runtime metadata for a feature.
+# Return the value for <Key> from the runtime resource of a feature.
+# Only Key="version" is supported.
 function State-GetRuntime {
     param(
-        [Parameter(Mandatory=$true)]
-        [string]$Feature,
-        [Parameter(Mandatory=$true)]
-        [string]$Key
+        [Parameter(Mandatory=$true)] [string]$Feature,
+        [Parameter(Mandatory=$true)] [string]$Key
     )
+    _State-EnsureLoaded
 
-    if (-not (State-HasFeature -Feature $Feature)) {
-        return $null
-    }
+    if ($Key -ne "version") { return $null }
 
-    $state = Get-Content -Path $global:DOTFILES_STATE_FILE -Raw | ConvertFrom-Json
-    
-    # Safe access with null fallback
-    if ($state.features.$Feature.PSObject.Properties['runtime'] -and 
-        $state.features.$Feature.runtime.PSObject.Properties[$Key]) {
-        return $state.features.$Feature.runtime.$Key
-    }
-    
+    $resources = State-QueryResources -Feature $Feature
+    $rt = $resources | Where-Object { $_.kind -eq "runtime" } | Select-Object -First 1
+    if ($null -ne $rt) { return $rt.runtime.version }
     return $null
 }
 
 # State-HasRuntime <Feature> <Key>
-# Check if runtime metadata exists for a feature.
 function State-HasRuntime {
     param(
-        [Parameter(Mandatory=$true)]
-        [string]$Feature,
-        [Parameter(Mandatory=$true)]
-        [string]$Key
+        [Parameter(Mandatory=$true)] [string]$Feature,
+        [Parameter(Mandatory=$true)] [string]$Key
     )
+    _State-EnsureLoaded
 
-    if (-not (State-HasFeature -Feature $Feature)) {
-        return $false
-    }
+    if ($Key -ne "version") { return $false }
 
-    $state = Get-Content -Path $global:DOTFILES_STATE_FILE -Raw | ConvertFrom-Json
-    
-    return ($state.features.$Feature.PSObject.Properties['runtime'] -and 
-            $state.features.$Feature.runtime.PSObject.Properties[$Key])
+    $resources = State-QueryResources -Feature $Feature
+    return ($resources | Where-Object { $_.kind -eq "runtime" } | Measure-Object).Count -gt 0
 }
