@@ -1,0 +1,5 @@
+description: uv Python packages for development
+depends:
+  - python
+packages:
+  - name: python-lsp-server

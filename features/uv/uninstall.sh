@@ -9,11 +9,11 @@ DOTFILES_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 source "$DOTFILES_ROOT/core/lib/env.sh"
 source "$DOTFILES_ROOT/core/lib/logger.sh"
 
-FEATURE_NAME="python"
+FEATURE_NAME="uv"
 
 log_task "Uninstalling feature: $FEATURE_NAME"
 
-# python/uv runtimes and feature state removal are handled by executor.
-# uv Python packages are managed by the separate `uv` feature (features/uv/).
+# uv Python packages are removed by executor via backends/uv.sh.
+# No manual steps required in this script.
 
 log_success "Feature $FEATURE_NAME uninstalled successfully"
