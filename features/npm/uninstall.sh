@@ -9,11 +9,11 @@ DOTFILES_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 source "$DOTFILES_ROOT/core/lib/env.sh"
 source "$DOTFILES_ROOT/core/lib/logger.sh"
 
-FEATURE_NAME="node"
+FEATURE_NAME="npm"
 
 log_task "Uninstalling feature: $FEATURE_NAME"
 
-# node runtime and feature state removal are handled by executor.
-# npm global packages are managed by the separate `npm` feature (features/npm/).
+# npm global packages are removed by executor via backends/npm.sh.
+# No manual steps required in this script.
 
 log_success "Feature $FEATURE_NAME uninstalled successfully"
