@@ -17,19 +17,19 @@
 #   state_patch_finalize
 #   state_migrate
 #
-# Compat API (Phase 1 – will be removed in Phase 4):
-#   state_init
-#   state_has_feature <feature>
-#   state_list_features
-#   state_get_packages <feature>
-#   state_get_files <feature>
-#   state_has_file <path>
-#   state_remove_feature <feature>
-#   state_add_package <feature> <package>
-#   state_add_file <feature> <path>
-#   state_set_runtime <feature> <key> <value>
-#   state_get_runtime <feature> <key>
-#   state_has_runtime <feature> <key>
+# Compat API (updated Phase 4):
+#   state_init                                — keep (used by scripts)
+#   state_has_feature <feature>               — keep
+#   state_list_features                       — keep
+#   state_get_packages <feature>              — keep (node/python uninstall)
+#   state_get_files <feature>                 — keep
+#   state_has_file <path>                     — keep
+#   state_add_package <feature> <package>     — keep (npm:/uv: secondary packages)
+#   state_add_file <feature> <path>           — keep (git gitconfig complex merge)
+#   state_get_runtime <feature> <key>         — keep (read-only)
+#   state_has_runtime <feature> <key>         — keep (read-only)
+#   state_remove_feature <feature>            — DEPRECATED; executor uses state_patch_remove_feature
+#   state_set_runtime <feature> <key> <value> — DEPRECATED; executor writes runtime resources
 # -----------------------------------------------------------------------------
 
 # ── Private state ─────────────────────────────────────────────────────────────
@@ -509,8 +509,14 @@ _migrate_v1_to_v2() {
 }
 
 # ── Compat API ────────────────────────────────────────────────────────────────
-# These functions provide backwards compatibility for feature scripts written
-# against the v1 API. Will be removed when Phase 4 rewrites feature scripts.
+# Compatibility API for Phase 4+ feature scripts.
+#
+# Status after Phase 4:
+#   state_init, state_has_feature, state_list_features  → still used (keep)
+#   state_get_packages, state_get_files, state_has_file  → still used (keep)
+#   state_get_runtime, state_has_runtime                 → kept for reads
+#   state_add_package, state_add_file                    → used by scripts for secondary pkgs/files
+#   state_remove_feature, state_set_runtime              → DEPRECATED, see individual functions
 
 # state_init
 # Initialize or load state. Calls state_load (which auto-migrates v1 if needed).
@@ -584,6 +590,8 @@ state_has_file() {
 }
 
 # state_remove_feature <feature>
+# DEPRECATED (Phase 4): use state_patch_remove_feature + state_patch_finalize instead.
+# Executor calls state_patch_remove_feature; uninstall scripts no longer call this.
 # Remove a feature entry from state and commit atomically.
 state_remove_feature() {
     local feature="$1"
@@ -702,9 +710,9 @@ state_add_file() {
 }
 
 # state_set_runtime <feature> <key> <value>
+# DEPRECATED (Phase 4): executor writes runtime resources from meta.yaml declarations.
+# Feature scripts no longer call this function.
 # Register (or replace) a runtime resource for a feature.
-# Only key="version" is currently used; runtime name is derived from the feature id.
-# Commits atomically.
 state_set_runtime() {
     local feature="$1"
     local key="$2"

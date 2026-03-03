@@ -16,19 +16,19 @@
 #   State-PatchFinalize
 #   State-Migrate
 #
-# Compat API (Phase 1 — will be removed in Phase 4):
-#   State-Init
-#   State-HasFeature <Feature>
-#   State-ListFeatures
-#   State-GetPackages <Feature>
-#   State-GetFiles <Feature>
-#   State-HasFile <File>
-#   State-RemoveFeature <Feature>
-#   State-AddPackage <Feature> <Package>
-#   State-AddFile <Feature> <File>
-#   State-SetRuntime <Feature> <Key> <Value>
-#   State-GetRuntime <Feature> <Key>
-#   State-HasRuntime <Feature> <Key>
+# Compat API (updated Phase 4):
+#   State-Init                                        — keep (used by scripts)
+#   State-HasFeature <Feature>                        — keep
+#   State-ListFeatures                                — keep
+#   State-GetPackages <Feature>                       — keep (node/python uninstall)
+#   State-GetFiles <Feature>                          — keep
+#   State-HasFile <File>                              — keep
+#   State-AddPackage <Feature> <Package>              — keep (npm:/uv: secondary packages)
+#   State-AddFile <Feature> <File>                    — keep (git gitconfig complex merge)
+#   State-GetRuntime <Feature> <Key>                  — keep (read-only)
+#   State-HasRuntime <Feature> <Key>                  — keep (read-only)
+#   State-RemoveFeature <Feature>                     — DEPRECATED; executor uses State-PatchRemoveFeature
+#   State-SetRuntime <Feature> <Key> <Value>          — DEPRECATED; executor writes runtime resources
 # -----------------------------------------------------------------------------
 
 Set-StrictMode -Version Latest
@@ -497,6 +497,8 @@ function State-HasFile {
 }
 
 # State-RemoveFeature <Feature>
+# DEPRECATED (Phase 4): use State-PatchRemoveFeature + State-PatchFinalize instead.
+# Executor calls State-PatchRemoveFeature; uninstall scripts no longer call this.
 function State-RemoveFeature {
     param([Parameter(Mandatory=$true)] [string]$Feature)
     _State-EnsureLoaded
@@ -593,6 +595,8 @@ function State-AddFile {
 }
 
 # State-SetRuntime <Feature> <Key> <Value>
+# DEPRECATED (Phase 4): executor writes runtime resources from meta.yaml declarations.
+# Feature scripts no longer call this function.
 # Register (or replace) a runtime resource for a feature.
 # Only Key="version" is currently used; runtime name is derived from the feature id.
 function State-SetRuntime {
