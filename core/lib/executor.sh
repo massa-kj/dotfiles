@@ -4,7 +4,7 @@
 #
 # Responsibility:
 #   IMPURE executor. Receives a plan JSON object from planner and executes it.
-#   Calls feature scripts, manages state after each successful operation.
+#   Manages all package/runtime/file installations and state commits.
 #
 # Public API:
 #   executor_run <plan_json>
@@ -12,27 +12,417 @@
 # Execution contract:
 #   - Blocked features in plan.blocked are reported and skipped.
 #   - Actions are executed in plan.actions order (destroy → replace → create).
-#   - For `replace`: uninstall script runs first, then install script.
-#   - On any script failure: abort immediately with non-zero exit.
+#   - For each action, executor reads meta.yaml to determine packages/runtimes/files.
+#   - On any failure: abort immediately with non-zero exit.
 #     Partial execution is left in place; state reflects what succeeded.
 #
-# State commit (Phase 3 note):
-#   Feature scripts currently call compat state APIs (state_add_package etc.)
-#   which commit state atomically on their own. Executor does not do additional
-#   state commits in Phase 3.
-#   Phase 4 will rewrite feature scripts to be state-free; at that point
-#   executor will be responsible for all state_patch_begin / state_patch_finalize
-#   / state_commit_atomic calls.
+# State commit model (Phase 4):
+#   Executor owns all state writes:
+#     install:  state_patch_begin → packages/runtimes/files → state_patch_finalize
+#               → run install.sh (for secondary pkgs: npm/uv etc.)
+#     destroy:  _executor_remove_resources (fs rm + backend uninstall)
+#               → run uninstall.sh (for secondary pkg cleanup)
+#               → state_patch_begin → state_patch_remove_feature → state_patch_finalize
+#
+#   Feature scripts must NOT call state_remove_feature, state_add_package
+#   (except for secondary packages like npm:/uv:), install_package, install_runtime.
+#
+# meta.yaml package/runtime/files schema:
+#   packages:
+#     - tmux                    # string: name only, managed=true
+#     - name: neovim
+#       managed: false          # do not uninstall on feature remove
+#   runtimes:
+#     - name: node              # version from DOTFILES_FEATURE_CONFIG_VERSION
+#     - name: rust-analyzer
+#       version: "2025-05-26"   # fixed version
+#   files:
+#     - src: .tmux.conf         # path relative to feature/files/
+#       target: ~/.tmux.conf    # ~ expanded
+#       op: link                # link (symlink, fallback copy) or copy
 # -----------------------------------------------------------------------------
 
-# This library expects env.sh, logger.sh, state.sh to be sourced by the caller.
+# This library expects env.sh, logger.sh, state.sh, backend_registry.sh to be
+# sourced by the caller (orchestrator).
 
-# ── Internal helpers ──────────────────────────────────────────────────────────
+# ── Meta helpers ──────────────────────────────────────────────────────────────
+
+# _executor_resolve_meta_file <feature>
+# Print the base meta.yaml path for a feature. Fails if not found.
+_executor_resolve_meta_file() {
+    local feature="$1"
+    local meta="$DOTFILES_FEATURES_DIR/$feature/meta.yaml"
+    if [[ ! -f "$meta" ]]; then
+        log_error "_executor_resolve_meta_file: meta.yaml not found for: $feature"
+        return 1
+    fi
+    echo "$meta"
+}
+
+# _executor_resolve_platform_meta_file <feature>
+# Print the platform-specific meta.yaml path, or empty string if none exists.
+# Priority: meta.wsl.yaml > meta.linux.yaml (for wsl), meta.linux.yaml (for linux),
+#           meta.<platform>.yaml (for others).
+_executor_resolve_platform_meta_file() {
+    local feature="$1"
+    local dir="$DOTFILES_FEATURES_DIR/$feature"
+
+    if [[ "$DOTFILES_PLATFORM" == "wsl" ]]; then
+        if [[ -f "$dir/meta.wsl.yaml" ]]; then echo "$dir/meta.wsl.yaml"; return; fi
+        if [[ -f "$dir/meta.linux.yaml" ]]; then echo "$dir/meta.linux.yaml"; return; fi
+    elif [[ "$DOTFILES_PLATFORM" == "linux" ]]; then
+        if [[ -f "$dir/meta.linux.yaml" ]]; then echo "$dir/meta.linux.yaml"; return; fi
+    else
+        if [[ -f "$dir/meta.${DOTFILES_PLATFORM}.yaml" ]]; then
+            echo "$dir/meta.${DOTFILES_PLATFORM}.yaml"; return
+        fi
+    fi
+    echo ""
+}
+
+# _executor_get_pkgs_from_meta <meta_file>
+# Print package names (one per line) from a meta.yaml file.
+# Supports string form ("tmux") and mapping form ({name: tmux, managed: false}).
+_executor_get_pkgs_from_meta() {
+    local meta_file="$1"
+    [[ -z "$meta_file" ]] && return 0
+    yq eval '.packages // [] | .[] | .name // .' \
+        "$meta_file" 2>/dev/null
+}
+
+# _executor_pkg_managed <feature> <pkg_name>
+# Return 0 if the package should be uninstalled on feature remove, 1 if managed:false.
+# Checks both base and platform meta files.
+_executor_pkg_managed() {
+    local feature="$1"
+    local pkg="$2"
+
+    local meta_file
+    meta_file=$(_executor_resolve_meta_file "$feature") || return 0
+
+    local platform_meta
+    platform_meta=$(_executor_resolve_platform_meta_file "$feature")
+
+    # Check base + platform meta files for managed:false
+    for f in "$meta_file" "$platform_meta"; do
+        [[ -z "$f" ]] && continue
+        local flag
+        # yq v4: select item matching by name or string value, read .managed field
+        # Note: do NOT use '.managed // true' — yq v4 treats false as falsy in //
+        flag=$(yq eval \
+            ".packages // [] | .[] | select((.name // .) == \"$pkg\") | .managed" \
+            "$f" 2>/dev/null | head -n1)
+        [[ "$flag" == "false" ]] && return 1
+    done
+    return 0
+}
+
+# _executor_get_runtimes_json <meta_file>
+# Print runtimes array as JSON from a meta.yaml file. Returns [] if none.
+_executor_get_runtimes_json() {
+    local meta_file="$1"
+    [[ -z "$meta_file" ]] && echo "[]" && return 0
+    local result
+    result=$(yq eval -o=json '.runtimes // []' "$meta_file" 2>/dev/null)
+    echo "${result:-[]}"
+}
+
+# _executor_get_files_json <meta_file>
+# Print files array as JSON from a meta.yaml file. Returns [] if none.
+_executor_get_files_json() {
+    local meta_file="$1"
+    [[ -z "$meta_file" ]] && echo "[]" && return 0
+    local result
+    result=$(yq eval -o=json '.files // []' "$meta_file" 2>/dev/null)
+    echo "${result:-[]}"
+}
+
+# ── Resource operations ───────────────────────────────────────────────────────
+
+# _executor_apply_packages <feature> <meta_file> [<platform_meta_file>]
+# Install all packages declared in meta.yaml and add them to the active state patch.
+# Skips packages where backend_package_exists returns true.
+_executor_apply_packages() {
+    local feature="$1"
+    local meta_file="$2"
+    local platform_meta_file="${3:-}"
+
+    # Collect package names from base + platform meta (deduplicated)
+    local -a all_pkgs=()
+    while IFS= read -r pkg; do
+        [[ -n "$pkg" ]] && all_pkgs+=("$pkg")
+    done < <(_executor_get_pkgs_from_meta "$meta_file")
+
+    while IFS= read -r pkg; do
+        [[ -n "$pkg" ]] && all_pkgs+=("$pkg")
+    done < <(_executor_get_pkgs_from_meta "$platform_meta_file")
+
+    # Deduplicate (guard: printf '%s\n' on an empty array emits a blank line in bash,
+    # which would pass "" as a package name to resolve_backend_for).
+    ((${#all_pkgs[@]} == 0)) && return 0
+    local -a unique_pkgs
+    readarray -t unique_pkgs < <(printf '%s\n' "${all_pkgs[@]}" | grep -v '^[[:space:]]*$' | sort -u)
+    ((${#unique_pkgs[@]} == 0)) && return 0
+
+    for pkg in "${unique_pkgs[@]}"; do
+        local backend
+        backend=$(resolve_backend_for "package" "$pkg") || return 1
+        load_backend "$backend" || return 1
+
+        if backend_call "package_exists" "$pkg" 2>/dev/null; then
+            log_info "    package already installed: $pkg"
+        else
+            log_info "    installing package: $pkg"
+            backend_call "install_package" "$pkg" || {
+                log_error "executor: failed to install package: $pkg"
+                return 1
+            }
+        fi
+
+        local resource
+        resource=$(jq -n \
+            --arg name "$pkg" \
+            --arg backend "$backend" '
+            {kind: "package", id: ("pkg:" + $name), backend: $backend,
+             package: {name: $name, version: null}}
+        ')
+        state_patch_add_resource "$feature" "$resource" || return 1
+    done
+}
+
+# _executor_apply_runtimes <feature> <meta_file> <platform_meta_file> <config_version>
+# Install all runtimes declared in meta.yaml and add them to the active state patch.
+# Runtime version resolution order:
+#   1. Explicit version in meta.yaml ({name: rust-analyzer, version: "2025-05-26"})
+#   2. config_version from profile (for the primary runtime, no explicit version)
+#   3. "latest" as fallback
+_executor_apply_runtimes() {
+    local feature="$1"
+    local meta_file="$2"
+    local platform_meta_file="${3:-}"
+    local config_version="${4:-}"
+
+    # Merge runtimes from base + platform meta (deduplicated by name)
+    local base_rts platform_rts merged_rts
+    base_rts=$(_executor_get_runtimes_json "$meta_file")
+    platform_rts=$(_executor_get_runtimes_json "$platform_meta_file")
+    merged_rts=$(jq -n --argjson a "$base_rts" --argjson b "$platform_rts" \
+        '($a + $b) | unique_by(.name)')
+
+    local rt_count
+    rt_count=$(echo "$merged_rts" | jq 'length')
+    ((rt_count == 0)) && return 0
+
+    for ((i = 0; i < rt_count; i++)); do
+        local rt_entry rt_name rt_meta_ver rt_version
+        rt_entry=$(echo "$merged_rts" | jq --argjson i "$i" '.[$i]')
+        rt_name=$(echo "$rt_entry" | jq -r '.name')
+        rt_meta_ver=$(echo "$rt_entry" | jq -r '.version // empty')
+
+        # Version resolution
+        if [[ -n "$rt_meta_ver" ]]; then
+            rt_version="$rt_meta_ver"
+        elif [[ -n "$config_version" ]]; then
+            rt_version="$config_version"
+        else
+            rt_version="latest"
+        fi
+
+        local backend
+        backend=$(resolve_backend_for "runtime" "$rt_name") || return 1
+        load_backend "$backend" || return 1
+
+        local actual_version="$rt_version"
+        if backend_call "runtime_exists" "$rt_name" "$rt_version" 2>/dev/null; then
+            log_info "    runtime already installed: $rt_name@$rt_version"
+        else
+            log_info "    installing runtime: $rt_name@$rt_version"
+            actual_version=$(backend_call "install_runtime" "$rt_name" "$rt_version") || {
+                log_error "executor: failed to install runtime: $rt_name@$rt_version"
+                return 1
+            }
+            [[ -z "$actual_version" ]] && actual_version="$rt_version"
+        fi
+
+        local resource
+        resource=$(jq -n \
+            --arg name "$rt_name" \
+            --arg ver "$actual_version" \
+            --arg backend "$backend" '
+            {kind: "runtime", id: ("rt:" + $name + "@" + $ver), backend: $backend,
+             runtime: {name: $name, version: $ver}}
+        ')
+        state_patch_add_resource "$feature" "$resource" || return 1
+    done
+}
+
+# _executor_deploy_files <feature> <meta_file> [<platform_meta_file>]
+# Deploy files declared in meta.yaml and add fs resources to the active state patch.
+# Supports op: link (symlink with copy fallback) and op: copy.
+_executor_deploy_files() {
+    local feature="$1"
+    local meta_file="$2"
+    local platform_meta_file="${3:-}"
+
+    # Merge files from base + platform meta
+    local base_files platform_files merged_files
+    base_files=$(_executor_get_files_json "$meta_file")
+    platform_files=$(_executor_get_files_json "$platform_meta_file")
+    merged_files=$(jq -n --argjson a "$base_files" --argjson b "$platform_files" '$a + $b')
+
+    local file_count
+    file_count=$(echo "$merged_files" | jq 'length')
+    ((file_count == 0)) && return 0
+
+    for ((i = 0; i < file_count; i++)); do
+        local entry src_rel op target
+        entry=$(echo "$merged_files" | jq --argjson i "$i" '.[$i]')
+        src_rel=$(echo "$entry" | jq -r '.src')
+        op=$(echo "$entry" | jq -r '.op // "link"')
+        # Expand ~ in target path
+        target=$(echo "$entry" | jq -r '.target' | sed "s|^~|$HOME|")
+
+        local src="$DOTFILES_FEATURES_DIR/$feature/files/$src_rel"
+        if [[ ! -e "$src" ]]; then
+            log_error "executor: file source not found: $src"
+            return 1
+        fi
+
+        # Ensure parent directory exists
+        local parent
+        parent="$(dirname "$target")"
+        [[ ! -d "$parent" ]] && mkdir -p "$parent"
+
+        # Handle conflict: remove if managed, fail otherwise
+        if [[ -e "$target" ]] || [[ -L "$target" ]]; then
+            if state_has_file "$target"; then
+                rm -rf "$target"
+            else
+                log_error "executor: path exists and is not managed: $target"
+                return 1
+            fi
+        fi
+
+        # Deploy
+        if [[ "$op" == "link" ]]; then
+            if ln -s "$src" "$target" 2>/dev/null; then
+                log_success "  Linked $target"
+            else
+                cp -r "$src" "$target" || {
+                    log_error "executor: copy fallback failed for: $target"
+                    return 1
+                }
+                log_success "  Copied $target (link fallback)"
+            fi
+        else
+            cp -r "$src" "$target" || {
+                log_error "executor: copy failed for: $target"
+                return 1
+            }
+            log_success "  Copied $target"
+        fi
+
+        # Detect actual entry_type from filesystem
+        local entry_type actual_op
+        if [[ -L "$target" ]]; then
+            entry_type="symlink"; actual_op="link"
+        elif [[ -d "$target" ]]; then
+            entry_type="dir";     actual_op="copy"
+        else
+            entry_type="file";    actual_op="copy"
+        fi
+
+        local resource
+        resource=$(jq -n \
+            --arg path "$target" \
+            --arg et "$entry_type" \
+            --arg op "$actual_op" '
+            {kind: "fs", id: ("fs:" + $path),
+             fs: {path: $path, entry_type: $et, op: $op}}
+        ')
+        state_patch_add_resource "$feature" "$resource" || return 1
+    done
+}
+
+# _executor_remove_resources <feature>
+# Reverse of apply: reads current state and removes fs/runtime/package resources.
+#
+# Removal order (reverse of install): secondary-pkgs skipped, files → runtimes → packages
+# Skip rules:
+#   - Resources with backend="unknown" are NOT backend-uninstalled (legacy / pre-Phase4)
+#   - Packages with managed:false in meta.yaml are NOT uninstalled
+_executor_remove_resources() {
+    local feature="$1"
+
+    state_has_feature "$feature" || return 0
+
+    local resources
+    resources=$(state_query_resources "$feature")
+    local rc
+    rc=$(echo "$resources" | jq 'length')
+    ((rc == 0)) && return 0
+
+    # 1. Remove fs resources (files / dirs / symlinks)
+    for ((i = 0; i < rc; i++)); do
+        local res kind
+        res=$(echo "$resources" | jq --argjson i "$i" '.[$i]')
+        kind=$(echo "$res" | jq -r '.kind')
+        [[ "$kind" != "fs" ]] && continue
+
+        local path
+        path=$(echo "$res" | jq -r '.fs.path')
+        if [[ -e "$path" ]] || [[ -L "$path" ]]; then
+            log_info "    removing: $path"
+            rm -rf "$path"
+        fi
+    done
+
+    # 2. Uninstall managed runtimes (backend != "unknown")
+    for ((i = 0; i < rc; i++)); do
+        local res kind backend
+        res=$(echo "$resources" | jq --argjson i "$i" '.[$i]')
+        kind=$(echo "$res" | jq -r '.kind')
+        [[ "$kind" != "runtime" ]] && continue
+        backend=$(echo "$res" | jq -r '.backend // "unknown"')
+        [[ "$backend" == "unknown" ]] && continue
+
+        local rt_name rt_ver
+        rt_name=$(echo "$res" | jq -r '.runtime.name')
+        rt_ver=$(echo "$res" | jq -r '.runtime.version // ""')
+        log_info "    uninstalling runtime: $rt_name@$rt_ver"
+        load_backend "$backend" || { log_warn "    backend load failed: $backend (skipping)"; continue; }
+        backend_call "uninstall_runtime" "$rt_name" "$rt_ver" || \
+            log_warn "    uninstall_runtime failed for $rt_name@$rt_ver (continuing)"
+    done
+
+    # 3. Uninstall managed packages (backend != "unknown", managed != false)
+    for ((i = 0; i < rc; i++)); do
+        local res kind backend
+        res=$(echo "$resources" | jq --argjson i "$i" '.[$i]')
+        kind=$(echo "$res" | jq -r '.kind')
+        [[ "$kind" != "package" ]] && continue
+        backend=$(echo "$res" | jq -r '.backend // "unknown"')
+        [[ "$backend" == "unknown" ]] && continue
+
+        local pkg_name
+        pkg_name=$(echo "$res" | jq -r '.package.name')
+        _executor_pkg_managed "$feature" "$pkg_name" || {
+            log_info "    skipping unmanaged package: $pkg_name"
+            continue
+        }
+
+        log_info "    uninstalling package: $pkg_name"
+        load_backend "$backend" || { log_warn "    backend load failed: $backend (skipping)"; continue; }
+        backend_call "uninstall_package" "$pkg_name" || \
+            log_warn "    uninstall_package failed for $pkg_name (continuing)"
+    done
+}
+
+# ── Feature operations ────────────────────────────────────────────────────────
 
 # _executor_run_script <script_path> [env_vars...]
 # Run a feature script as a subprocess.
 # Extra arguments are exported as environment variables for the subprocess.
-# Returns the script exit code.
 _executor_run_script() {
     local script="$1"
     shift
@@ -42,7 +432,6 @@ _executor_run_script() {
         return 1
     fi
 
-    # Set extra env vars if provided (NAME=value format)
     local -a env_args=()
     for arg in "$@"; do
         env_args+=("$arg")
@@ -55,52 +444,110 @@ _executor_run_script() {
     fi
 }
 
-# _executor_destroy <feature>
-# Run uninstall script for a feature. Aborts executor on failure.
-_executor_destroy() {
-    local feature="$1"
-    local script="$DOTFILES_FEATURES_DIR/$feature/uninstall.sh"
-
-    log_info "Destroying: $feature"
-    if ! _executor_run_script "$script"; then
-        log_error "executor: failed to uninstall feature: $feature"
-        return 1
-    fi
-}
-
 # _executor_install <feature> <config_version>
-# Run install script for a feature. Aborts executor on failure.
+# Full install pipeline:
+#   1. Resolve meta files
+#   2. state_patch_begin
+#   3. Install packages/runtimes/files from meta.yaml → state_patch
+#   4. state_patch_finalize
+#   5. Run install.sh script (for secondary pkg setup: npm/uv/bootstrap)
 _executor_install() {
     local feature="$1"
     local config_version="${2:-}"
-    local script="$DOTFILES_FEATURES_DIR/$feature/install.sh"
 
     log_info "Installing: $feature"
 
-    local -a env_args=()
-    if [[ -n "$config_version" ]]; then
-        env_args+=("DOTFILES_FEATURE_CONFIG_VERSION=$config_version")
-    fi
+    local meta_file platform_meta
+    meta_file=$(_executor_resolve_meta_file "$feature") || return 1
+    platform_meta=$(_executor_resolve_platform_meta_file "$feature")
 
-    if ! _executor_run_script "$script" "${env_args[@]}"; then
-        log_error "executor: failed to install feature: $feature"
+    # Begin patch accumulation
+    state_patch_begin || return 1
+
+    _executor_apply_packages "$feature" "$meta_file" "$platform_meta" || {
+        log_error "executor: package installation failed for: $feature"
         return 1
+    }
+
+    _executor_apply_runtimes "$feature" "$meta_file" "$platform_meta" "$config_version" || {
+        log_error "executor: runtime installation failed for: $feature"
+        return 1
+    }
+
+    _executor_deploy_files "$feature" "$meta_file" "$platform_meta" || {
+        log_error "executor: file deployment failed for: $feature"
+        return 1
+    }
+
+    # Commit packages/runtimes/files to state; install.sh subprocess will
+    # inherit the updated state and may further commit secondary packages.
+    state_patch_finalize || return 1
+
+    # Run install.sh for remaining setup (npm/uv packages, bootstrap logic, etc.)
+    local script="$DOTFILES_FEATURES_DIR/$feature/install.sh"
+    if [[ -f "$script" ]]; then
+        local -a env_args=()
+        [[ -n "$config_version" ]] && env_args+=("DOTFILES_FEATURE_CONFIG_VERSION=$config_version")
+        if ! _executor_run_script "$script" "${env_args[@]}"; then
+            log_error "executor: install script failed for: $feature"
+            return 1
+        fi
     fi
 }
 
+# _executor_destroy <feature>
+# Full destroy pipeline:
+#   1. Remove resources tracked in state (fs + managed runtimes/packages)
+#   2. Run uninstall.sh script (for secondary pkg cleanup: npm/uv etc.)
+#   3. state_patch_begin → state_patch_remove_feature → state_patch_finalize
+_executor_destroy() {
+    local feature="$1"
+
+    log_info "Destroying: $feature"
+
+    # Remove resources tracked in state
+    _executor_remove_resources "$feature" || return 1
+
+    # Run uninstall.sh for remaining cleanup (npm/uv uninstall etc.)
+    local script="$DOTFILES_FEATURES_DIR/$feature/uninstall.sh"
+    if [[ -f "$script" ]]; then
+        if ! _executor_run_script "$script"; then
+            log_error "executor: uninstall script failed for: $feature"
+            return 1
+        fi
+    fi
+
+    # Remove feature entry from state
+    state_patch_begin || return 1
+    state_patch_remove_feature "$feature" || return 1
+    state_patch_finalize || return 1
+}
+
 # _executor_replace <feature> <config_version>
-# Uninstall then re-install a feature (version or backend replacement).
+# Replace = destroy resources + uninstall script + state remove, then full install.
 _executor_replace() {
     local feature="$1"
     local config_version="${2:-}"
-    local uninstall_script="$DOTFILES_FEATURES_DIR/$feature/uninstall.sh"
 
     log_info "Replacing: $feature"
-    if ! _executor_run_script "$uninstall_script"; then
-        log_error "executor: failed to uninstall before replace: $feature"
-        return 1
+
+    # Destroy phase (resources + script)
+    _executor_remove_resources "$feature" || return 1
+
+    local uninstall_script="$DOTFILES_FEATURES_DIR/$feature/uninstall.sh"
+    if [[ -f "$uninstall_script" ]]; then
+        if ! _executor_run_script "$uninstall_script"; then
+            log_error "executor: uninstall script failed during replace for: $feature"
+            return 1
+        fi
     fi
 
+    # Remove state entry so install can start fresh
+    state_patch_begin || return 1
+    state_patch_remove_feature "$feature" || return 1
+    state_patch_finalize || return 1
+
+    # Install phase (full meta.yaml + script)
     _executor_install "$feature" "$config_version" || return 1
 }
 

@@ -72,10 +72,11 @@ _planner_profile_version() {
 # _planner_state_runtime_version <feature>
 # Extract the runtime resource version for a feature from state JSON.
 # Prints the version string, or empty if none.
+# Note: Phase 4 state stores version at .runtime.version (nested), not .version (top-level).
 _planner_state_runtime_version() {
     local feature="$1"
     echo "$_STATE_JSON" | jq -r --arg f "$feature" \
-        '.features[$f].resources // [] | map(select(.kind == "runtime")) | first | .version // ""'
+        '.features[$f].resources // [] | map(select(.kind == "runtime")) | first | (.runtime.version // .version // "")'
 }
 
 # _planner_state_has_unknown_kind <feature>
