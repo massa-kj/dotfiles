@@ -1,357 +1,119 @@
 # Core
 
-Core is:
+## Core is
 
-* The engine
-* The safety boundary
-* The orchestration brain
+* engine
+* safety boundary
+* orchestration brain
+
+Core MUST remain stable.
 
 Features are replaceable.
-Package managers are replaceable.
+Backends are replaceable.
 Platforms are replaceable.
 
-Core must remain stable.
+## Core responsibilities (normative)
 
-## Purpose
+Core MUST:
 
-The `core/` layer provides the minimal infrastructure required to:
+1. Load inputs: profile, policy, state
+2. Resolve feature graph (depends / requires-provides)
+3. Produce an execution plan (decision table / planner)
+4. Execute plan deterministically (no implicit fallback)
+5. Commit state only on successful operations
+6. Enforce safety rules (no untracked deletion, atomic state writes)
 
-* Interpret profiles
-* Resolve dependencies
-* Orchestrate installation and removal
-* Manage state safely
-* Abstract package management
+Core MUST NOT:
 
-It must remain:
+* contain feature-specific logic
+* contain manager-specific logic (brew/scoop/mise/winget etc.)
+* let plugins read policy or write state directly
+* infer installed resources by scanning the system for uninstall decisions
 
-* Deterministic
-* Platform-agnostic (except env bootstrap)
-* Strictly layered
-* Minimal in responsibility
+## Layering (re-confirm)
 
-Core is infrastructure — not business logic.
+* profiles = intent (What)
+* policy = strategy (How, incl backend selection)
+* state = effects (authority)
+* features = implementation units
+* backends = execution adapters
 
-## Design Principles
-
-### Separation of Concerns
-
-Core must never:
-
-* Contain feature-specific logic
-* Contain OS-specific install logic
-* Interpret configuration semantics
-* Contain tool knowledge
-
-Core only orchestrates and abstracts.
-
-### Deterministic Execution
-
-Given:
-
-* A profile
-* A state file
-* A set of features
-
-Execution must always produce the same result.
-
-No randomness.
-No hidden side effects.
-
-### State as the Only Source of Truth
-
-Core must:
-
-* Read state before execution
-* Update state after successful operations
-* Never infer installed resources outside state
-
-State corruption must stop execution.
-
-## Core Modules
-
-Current structure:
+## Module structure (proposed)
 
 ```
 core/lib/
-├── env
-├── resolver
-├── orchestrator
-├── state
-├── package
-├── runner
-├── fs
-├── repo
-├── logger
+├── env                # paths, platform detection, validation
+├── resolver           # load meta, build DAG, topo sort
+├── planner            # diff + classify + decide actions (pure)
+├── executor           # run actions, call features/backends, collect results
+├── state              # load/validate/atomic commit
+├── backend_registry   # resolve + load backend plugin, stable backend API gate
+├── fs                 # safe file operations (copy/link/backup/remove tracked)
+├── runner             # execute shell/pwsh consistently
+└── logger             # structured logging
 ```
 
-The module list may evolve, but responsibility boundaries must remain stable.
+## Backend Plugin Contract (normative)
 
-## Module Responsibilities
+Backend plugin MUST:
 
-### env
+* implement required functions for supported operations
+* be idempotent for install/uninstall operations
+* NOT read policy
+* NOT write state
+* NOT perform cross-feature decisions
 
-Responsibility:
+Backend plugin MAY:
 
-* Detect and expose:
+* check “manager exists” / “package exists” for plan observation only
 
-  * DOTFILES_ROOT
-  * DOTFILES_PLATFORM
-* Provide environment validation
+Backend plugin MUST expose:
 
-Must NOT:
+* `backend_api_version`
+* `backend_capabilities` (optional)
 
-* Install packages
-* Interpret profiles
+And operations (if capability supported):
 
-### resolver
+* `backend_install_package(name, version|null)`
+* `backend_uninstall_package(name, version|null)`
+* `backend_install_runtime(name, version)`
+* `backend_uninstall_runtime(name, version)`
 
-Responsibility:
+Observation (plan use):
 
-* Load feature metadata
-* Build dependency graph
-* Detect cycles
-* Produce topologically sorted feature list
+* `backend_manager_exists()`
+* `backend_package_exists(name, version|null)`
+* `backend_runtime_exists(name, version)`
 
-Must NOT:
+## Determinism rules (normative)
 
-* Execute install/uninstall
-* Inspect state
-* Perform OS checks
+Given the same (profile, policy, state, feature set), core MUST:
 
-resolver is pure logic.
+* produce the same plan
+* execute in the same order
+* commit the same state changes
 
-### orchestrator
+Core MUST NOT introduce:
 
-Responsibility:
+* randomization
+* time-based branching
+* implicit fallback without being represented in plan
 
-* Compare desired features vs installed state
-* Determine install/uninstall sets
-* Execute operations in correct order
+## Error policy (normative)
 
-Must NOT:
-
-* Contain package manager logic
-* Access filesystem directly (except via fs)
-* Modify state directly
-
-orchestrator coordinates only.
-
-### state
-
-Responsibility:
-
-* Load installed.json
-* Provide read API
-* Provide safe write API
-* Ensure atomic updates (tmp → move)
-
-Must enforce:
-
-* No direct JSON manipulation outside this module
-* Schema consistency
-* Version awareness
-
-State is a protected boundary.
-
-### package
-
-Responsibility:
-
-* Abstract package manager differences
-* Choose correct backend based on platform
-* Provide stable install/remove API
-
-Must NOT:
-
-* Know about profiles
-* Know about features
-* Update state
-
-package is a transport layer.
-package abstraction exists to decouple features from backend manager decisions.
-
-### runner
-
-Responsibility:
-
-* Execute shell or PowerShell scripts
-* Handle exit codes consistently
-
-Must NOT:
-
-* Implement orchestration logic
-* Perform dependency resolution
-
-### fs
-
-Responsibility:
-
-* Safe file operations
-* Controlled copy/symlink
-* Guard against destructive paths
-
-Must enforce:
-
-* No root-level destructive deletion
-* Explicit path handling
-
-### repo
-
-Responsibility:
-
-* Clone or update git repositories to local source directory
-* Resolve canonical install paths for locally managed tool binaries
-* Check local binary existence
-
-Convention:
-
-* Source repositories: `~/.local/src/<tool>`
-* Tool binaries: `~/.local/bin/<tool>`
-
-Must NOT:
-
-* Build or compile tools
-* Contain tool-specific install logic
-* Manage package manager backends
-
-### logger
-
-Responsibility:
-
-* Structured logging
-* Error reporting
-* Debug output
-
-Must NOT:
-
-* Contain business logic
-
-## Public API Surface
-
-[For Linux](./API.bash.md)
-[For Windows](./API.ps1.md)
-
-The exact function list may evolve,
-but responsibilities must not drift.
-
-## API Stability Levels
-
-Core APIs are classified by stability and usage scope.
-
-### Stable API
-
-**Intended for external use** (features, apply scripts).
-
-Breaking changes to these functions require:
-* Documentation update
-* Migration guidance
-* Considered a major change
-
-[For Linux](./API.bash.md)
-[For Windows](./API.ps1.md)
-
-### Internal API
-
-**For core module use only.**
-
-May change without external impact.
-
-Features must not call these directly.
-
-#### Orchestrator Module
-
-* `read_profile`
-* `calculate_diff`
-* `run_install`
-* `run_uninstall`
-
-#### Environment Module (env)
-
-* Environment variable exports only
-* No public functions
-
-### Experimental API
-
-Currently: none.
-
-If an unstable API is introduced, it must be:
-
-* Marked explicitly in source comments
-* Documented as experimental
-* Subject to change without notice
-
-### Deprecation Policy
-
-Deprecated stable APIs must:
-
-* Log warnings when called
-* Remain functional for at least one minor version
-* Provide migration path in documentation
-
-## Execution Guarantees
-
-Core guarantees:
-
-* Dependency order correctness
-* No circular dependency execution
-* Idempotent state transitions
-* No partial state writes
-
-Core does NOT guarantee:
-
-* Rollback on failure
-* Recovery from external system changes
-* Manager-level transactional integrity
-
-Failure is explicit and terminal.
-
-## Error Handling Policy
-
-* Any failure stops execution immediately.
-* No silent fallback.
-* No implicit retries.
+* Any failure stops execution.
+* No automatic retries.
 * No partial state commits.
+* If state commit fails → abort.
 
-If state update fails → abort.
-If dependency cycle detected → abort.
-If package install fails → abort.
-
-Safety over convenience.
-
-## What Core Must Never Do
-
-* Parse feature configuration values
-* Contain feature-specific branching
-* Embed platform install logic
-* Inspect files inside feature directories
-* Write to state outside state module
-
-If a change requires violating these rules,
-the architecture must be reconsidered.
-
-## Compatibility Expectations
-
-Core API stability is important.
+## Compatibility expectations (normative)
 
 Breaking changes include:
 
-* State schema changes
-* Public function signature changes
-* Execution flow reordering
+* state schema version bump
+* stable API signature changes (state/backend_registry/resolver/planner)
 
-When such changes are required:
+When breaking:
 
-* Update STATE_SPEC.md
-* Provide migration guidance
-* Increment state version if needed
-
-## Future Extension Rules
-
-When adding a new core module:
-
-1. Define responsibility clearly.
-2. Ensure it does not overlap with existing modules.
-3. Avoid circular dependency between modules.
-4. Keep cross-module calls minimal.
-
-Core must remain small.
+* MUST provide migration guidance
+* MUST update STATE_SPEC.md / CORE.md accordingly

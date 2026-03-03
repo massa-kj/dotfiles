@@ -124,7 +124,63 @@ List of feature dependencies.
 
 Empty array if no dependencies.
 
-### Metadata Extension Policy
+### Optional Fields
+
+#### `provides` (optional)
+
+List of capabilities this feature exposes to the resolver.
+
+```yaml
+provides:
+  - name: package_manager
+  - name: runtime_manager
+```
+
+Used by consumer features via `requires`.
+
+#### `requires` (optional)
+
+List of abstract capabilities this feature needs at install time.
+
+```yaml
+requires:
+  - name: package_manager
+```
+
+The resolver finds every feature in the current profile that declares the matching `provides` entry,
+and adds them as implicit install-order dependencies.
+
+If no provider is found in the profile, `apply` aborts with an error.
+
+### Capability Semantics
+
+| Capability | Assigned to |
+|---|---|
+| `package_manager` | `brew`, `scoop`, `mise` |
+| `runtime_manager` | `mise` |
+
+Use `requires` instead of a hard-coded `depends: [brew]` when a feature only
+needs _some_ package manager, not `brew` specifically.
+
+This keeps the feature platform-agnostic and lets the profile decide which
+manager is in use.
+
+**Example — dependency chain resolved at apply time:**
+
+```
+Profile: [brew, mise, cli-tools, node, ...]
+
+cli-tools.requires = [package_manager]
+→  brew provides package_manager   →  brew added as implicit dep of cli-tools
+
+node.requires = [runtime_manager]
+→  mise provides runtime_manager   →  mise added as implicit dep of node
+```
+
+**Uninstall safety:**
+Removing a provider feature from a profile while a consumer feature with a matching `requires`
+remains in the profile causes `apply` to abort — the resolver detects the missing provider
+before any changes are made.
 
 Additional metadata fields MAY be added for documentation or tooling purposes.
 
@@ -172,31 +228,59 @@ This allows:
 Example:
 
 ```yaml
-# meta.yaml (common)
-description: Neovim text editor with custom configuration
-depends:
-  - git
+# meta.yaml (common — platform-agnostic capability dependency)
+description: Terminal multiplexer with custom configuration
+depends: []
 
-# meta.linux.yaml (Linux/WSL common)
-depends:
-  - brew
+requires:
+  - name: package_manager
+
+# meta.linux.yaml (Linux/WSL — platform-specific packages)
+depends: []
+
+packages:
+  - tmux
 ```
 
 Platform-specific files must follow the same rules as `meta.yaml`.
+
+Do not declare `depends: [brew]` in `meta.linux.yaml`.
+Use `requires: [{name: package_manager}]` in `meta.yaml` instead.
 
 ## Dependency Rules
 
 ### What "depends" Means
 
-`depends` indicates:
+`depends` indicates a direct feature-to-feature ordering constraint:
 
-> This feature requires another feature to be installed first.
+> This feature requires another specific feature to be installed first.
+
+Use `depends` when the relationship is concrete and named (e.g., `git-tools` needs `git`).
 
 It does NOT mean:
 
 * Runtime coupling
 * Dynamic linkage
 * Conditional execution
+
+### What "requires" Means
+
+`requires` indicates a capability-based ordering constraint:
+
+> This feature needs _any_ provider of this capability to be present.
+
+Use `requires` instead of `depends: [brew]` when a feature only cares that _some_
+package manager is available, not a specific one.
+
+Capability providers are declared via `provides` by manager features (e.g., `brew`, `mise`).
+
+### Choosing between "depends" and "requires"
+
+| Situation | Use |
+|---|---|
+| Need a specific feature installed first | `depends` |
+| Need any package manager | `requires: [package_manager]` |
+| Need any runtime manager | `requires: [runtime_manager]` |
 
 Dependencies should remain shallow.
 
