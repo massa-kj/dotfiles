@@ -2,6 +2,9 @@ description: Git enhancement tools (lazygit, delta)
 depends:
   - git
 
+requires:
+  - name: package_manager
+
 packages:
   - git-delta
   - lazygit

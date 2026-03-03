@@ -1,5 +1,4 @@
 # features/lua/meta.windows.yaml
 # Windows-specific dependencies
 
-depends:
-  - scoop
+depends: []

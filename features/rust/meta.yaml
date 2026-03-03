@@ -1,6 +1,8 @@
 description: Rust toolchain with rust-analyzer language server
-depends:
-  - mise
+depends: []
+
+requires:
+  - name: runtime_manager
 
 runtimes:
   # version resolved from profile config (DOTFILES_FEATURE_CONFIG_VERSION)

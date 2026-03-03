@@ -1,6 +1,10 @@
 description: Polyglot runtime version manager
 depends: []
 
+provides:
+  - name: runtime_manager
+  - name: package_manager
+
 packages:
   # mise is installed via brew; set managed:false to avoid removing it on feature destroy
   # (other runtimes depend on mise being present)

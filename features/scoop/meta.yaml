@@ -1,2 +1,5 @@
 description: Scoop package manager for Windows
 depends: []
+
+provides:
+  - name: package_manager

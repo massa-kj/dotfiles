@@ -1,5 +1,4 @@
 # features/neovim/meta.wsl.yaml
 # WSL-specific dependencies
 
-depends:
-  - brew
+depends: []

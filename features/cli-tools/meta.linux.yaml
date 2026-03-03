@@ -1,8 +1,7 @@
 # features/cli-tools/meta.wsl.yaml
 # WSL-specific dependencies
 
-depends:
-  - brew
+depends: []
 
 packages:
   - fd

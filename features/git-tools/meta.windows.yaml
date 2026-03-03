@@ -1,5 +1,4 @@
 # features/git-tools/meta.windows.yaml
 # Windows-specific dependencies
 
-depends:
-  - scoop
+depends: []

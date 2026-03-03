@@ -1,6 +1,9 @@
 description: Lua development environment with formatters and language servers
-depends:
-  - mise
+depends: []
+
+requires:
+  - name: package_manager
+  - name: runtime_manager
 
 packages:
   - luacheck
