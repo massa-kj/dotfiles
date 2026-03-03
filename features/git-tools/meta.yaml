@@ -1,3 +1,12 @@
 description: Git enhancement tools (lazygit, delta)
 depends:
   - git
+
+packages:
+  - git-delta
+  - lazygit
+
+files:
+  - src: lazygit
+    target: ~/.config/lazygit
+    op: link

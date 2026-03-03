@@ -1,3 +1,12 @@
 description: Lua development environment with formatters and language servers
 depends:
   - mise
+
+packages:
+  - luacheck
+
+runtimes:
+  - name: stylua
+    version: "2.1.0"
+  - name: lua-language-server
+    version: "3.14.0"

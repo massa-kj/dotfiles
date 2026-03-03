@@ -8,41 +8,12 @@ DOTFILES_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 source "$DOTFILES_ROOT/core/lib/env.sh"
 source "$DOTFILES_ROOT/core/lib/logger.sh"
-source "$DOTFILES_ROOT/core/lib/state.sh"
-source "$DOTFILES_ROOT/core/lib/package.sh"
-source "$DOTFILES_ROOT/core/lib/fs.sh"
-source "$DOTFILES_ROOT/core/lib/runner.sh"
 
 FEATURE_NAME="git-tools"
 
 log_task "Installing feature: $FEATURE_NAME"
 
-# Ensure state is initialized
-state_init
-
-# List of tools to install
-TOOLS=(
-    "git-delta"
-    "lazygit"
-)
-
-# Install each tool
-for tool in "${TOOLS[@]}"; do
-    if has_command "$tool"; then
-        log_info "$tool is already installed"
-    else
-        log_info "Installing $tool..."
-        install_package "$tool"
-        log_success "$tool installed"
-    fi
-    state_add_package "$FEATURE_NAME" "$tool"
-done
-
-# Deploy lazygit configuration
-FEATURE_FILES_DIR="$SCRIPT_DIR/files"
-if [[ -d "$FEATURE_FILES_DIR/lazygit" ]]; then
-    log_info "Deploying lazygit configuration..."
-    link_dir "$FEATURE_NAME" "$FEATURE_FILES_DIR/lazygit" "$HOME/.config/lazygit"
-fi
+# Packages (git-delta, lazygit) and config directory (lazygit/) are managed by executor
+# (declared in meta.yaml packages and files sections).
 
 log_success "Feature $FEATURE_NAME installed successfully"
