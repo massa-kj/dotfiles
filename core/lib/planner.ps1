@@ -259,9 +259,14 @@ function _Planner-Decide {
         }
     })
 
+    $noopList = @($noops | ForEach-Object {
+        [PSCustomObject]@{ feature = $_.feature }
+    })
+
     return [PSCustomObject]@{
         actions = $actions
         blocked = $blockedList
+        noops   = $noopList
         summary = [PSCustomObject]@{
             create          = $creates.Count
             destroy         = $destroys.Count

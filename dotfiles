@@ -19,10 +19,15 @@ A declarative environment management system.
 
 Available commands:
   apply <profile>    Apply a dotfiles profile
+  plan  <profile>    Show what apply would do (no changes made)
+
+Options:
+  plan --verbose     Also list noop (already up-to-date) features
 
 Examples:
   dotfiles apply profiles/wsl.yaml
-  dotfiles apply profiles/minimal.yaml
+  dotfiles plan  profiles/wsl.yaml
+  dotfiles plan  profiles/wsl.yaml --verbose
 
 EOF
     exit 1
@@ -40,6 +45,9 @@ shift
 case "$COMMAND" in
     apply)
         exec "$DOTFILES_ROOT/cmd/apply.sh" "$@"
+        ;;
+    plan)
+        exec "$DOTFILES_ROOT/cmd/plan.sh" "$@"
         ;;
     help|--help|-h)
         usage

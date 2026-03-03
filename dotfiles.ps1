@@ -19,10 +19,15 @@ A declarative environment management system.
 
 Available commands:
   apply <profile>    Apply a dotfiles profile
+  plan  <profile>    Show what apply would do (no changes made)
+
+Options:
+  plan -Verbose      Also list noop (already up-to-date) features
 
 Examples:
   .\dotfiles.ps1 apply profiles\windows.yaml
-  .\dotfiles.ps1 apply profiles\minimal.yaml
+  .\dotfiles.ps1 plan  profiles\windows.yaml
+  .\dotfiles.ps1 plan  profiles\windows.yaml -Verbose
 
 "@
     exit 1
@@ -40,6 +45,10 @@ $CommandArgs = $args[1..($args.Count - 1)]
 switch ($Command) {
     "apply" {
         & "$ScriptRoot\cmd\apply.ps1" @CommandArgs
+        exit $LASTEXITCODE
+    }
+    "plan" {
+        & "$ScriptRoot\cmd\plan.ps1" @CommandArgs
         exit $LASTEXITCODE
     }
     "help" {

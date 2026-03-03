@@ -291,6 +291,7 @@ _planner_decide() {
                 feature: .feature,
                 reason:  (.reason // "unknown resource kind in state")
             })),
+            noops: ($noops | map({feature: .feature})),
             summary: {
                 create:          ($creates  | length),
                 destroy:         ($destroys | length),
