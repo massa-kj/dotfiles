@@ -3,15 +3,16 @@ policy: "default.linux"
 package:
   # Default backend for system package installs on Linux / WSL.
   default_backend: brew
-  # Per-resource backend overrides, keyed by the exact package name
-  # passed to the backend (i.e. the resource name, not the feature name).
-  # Example:
-  #   overrides:
-  #     ripgrep:
-  #       backend: brew
-  #     fd:
-  #       backend: brew
-  overrides: {}
+  # Per-resource backend overrides, keyed by the exact package name.
+  overrides:
+    typescript:
+      backend: npm
+    typescript-language-server:
+      backend: npm
+    eslint:
+      backend: npm
+    python-lsp-server:
+      backend: uv
 
 runtime:
   # Default backend for runtime installs (node, python, rust, lua, etc.).

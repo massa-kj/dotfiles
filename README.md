@@ -1,6 +1,6 @@
 # dotfiles
 
-A cross-platform, declarative environment management system.
+A lightweight cross-platform configuration management engine.
 
 Supports:
 
@@ -38,7 +38,7 @@ cd ~/dotfiles
 > What gets installed by bootstrap:
 > - git
 > - jq (JSON processor)
-> - yq (YAML processor)
+> - yq v4+ (YAML processor)
 
 ### Windows
 
