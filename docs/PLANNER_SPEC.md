@@ -224,6 +224,11 @@ Planner MUST output a structured plan object:
       }
     }
   ],
+  "noops": [
+    {
+      "feature": "bash"
+    }
+  ],
   "blocked": [
     {
       "feature": "legacy-feature",
@@ -243,8 +248,10 @@ Constraints:
 
 * Plan MUST contain ordered `actions`.
 * Plan MUST contain explicit `blocked` list.
+* Plan MUST contain `noops` list (features already correct — no action needed).
 * Plan MUST contain summary counts.
-* Plan MUST be serializable (for future JSON output).
+* `noops` MUST NOT appear in `actions` — they are recorded separately.
+* Plan MUST be serializable (for JSON output and `dotfiles plan`).
 
 ---
 

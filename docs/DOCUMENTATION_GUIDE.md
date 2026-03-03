@@ -90,13 +90,13 @@ Public API categories:
 **Content**:
 
 * install/uninstall symmetry
-* state API usage obligation
 * package abstraction requirement
+* executor-owns-state principle
 * Prohibited actions
 
 **Do NOT write**:
 
-* install_package argument specification
+* Backend function argument specification
 * runner return value specification
 
 ## Source Comment Specification
@@ -171,7 +171,6 @@ Defined in CORE.md.
 ### Stable API
 
 * state_*
-* install_package / remove_package / install_runtime / remove_runtime
 * resolve_dependencies
 
 → Used by external code (features, apply)  

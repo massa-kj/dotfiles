@@ -297,13 +297,13 @@ the design must be reconsidered.
 
 The install script must:
 
-1. Install required packages via `package` abstraction
+1. Install required packages via the package/runtime abstraction
 2. Place configuration files (copy or symlink)
-3. Register created resources in state
-4. Exit non-zero on failure
+3. Exit non-zero on failure
 
 The install script must NOT:
 
+* Register state directly (executor handles state on behalf of the feature)
 * Modify state directly via JSON tools
 * Bypass package abstraction
 * Perform dependency resolution
@@ -351,33 +351,28 @@ The `fs` abstraction should be used for file operations.
 
 ## State Interaction Rules
 
-Features must:
-
-* Use provided state APIs only
-* Register packages and files after successful operations
-
-Features must not:
+Features must NOT:
 
 * Access or modify installed.json directly
+* Call state registration functions (executor handles all state writes)
 * Infer state outside official APIs
 * Attempt to repair state
 
-State is managed centrally.
+State is written by the executor after each feature operation completes.
+Feature scripts do not write state.
 
 ## Package Management Rules
 
-Features must:
-
-* Use `install_package`, `remove_package`
-* Use `install_runtime`, `remove_runtime` where appropriate
+Feature scripts interact with packages via meta.yaml declarations.
+The executor reads `meta.yaml` and invokes the appropriate backend.
 
 Features must not:
 
-* Call `apt`, `brew`, `scoop`, or `mise` directly
+* Call `apt`, `brew`, `scoop`, `mise`, or any package manager directly inside install/uninstall scripts
 * Detect package manager manually
-* Hardcode platform-specific commands
+* Hardcode platform-specific package manager commands
 
-Package strategy may change in the future.
+Package installation strategy is determined by backend and policy, not by feature scripts.
 Features must remain insulated from it.
 
 ## Repository-Based Installation Rules

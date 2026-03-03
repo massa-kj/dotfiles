@@ -74,7 +74,9 @@ dotfiles/
 ├── dotfiles.ps1        # Main CLI entry point (Windows)
 ├── cmd/                # Orchestration layer commands
 │   ├── apply.sh        # Apply command implementation (Linux/WSL)
-│   └── apply.ps1       # Apply command implementation (Windows)
+│   ├── apply.ps1       # Apply command implementation (Windows)
+│   ├── plan.sh         # Plan command implementation (Linux/WSL)
+│   └── plan.ps1        # Plan command implementation (Windows)
 ├── core/lib/           # Core libraries (bash & PowerShell)
 ├── features/           # Self-contained feature modules
 │   ├── git/
@@ -176,7 +178,8 @@ Not:
 Entry points:
 
 * dotfiles / dotfiles.ps1 (dispatcher)
-* cmd/apply.sh / cmd/apply.ps1 (orchestration implementation)
+* cmd/apply.sh / cmd/apply.ps1 (apply implementation)
+* cmd/plan.sh / cmd/plan.ps1 (plan implementation)
 
 #### Purpose
 
@@ -185,33 +188,34 @@ Coordinate execution flow.
 The orchestration layer consists of:
 
 * **dotfiles**: Thin CLI dispatcher that routes commands
-* **cmd/**: Command implementations that orchestrate using core
+* **cmd/apply**: Calls planner → executor pipeline and commits state changes
+* **cmd/plan**: Calls planner only — **MUST NOT execute or modify state**
 
-Each command must remain a thin orchestration layer internally separated into:
+Each command is a thin shim: argument parsing + single library call.
 
-- resolution
-- diff computation
-- uninstall phase
-- install phase
+#### apply Responsibilities
 
-#### Responsibilities
+1. Load profile, policy, state
+2. Resolve feature graph
+3. Run planner → produce plan
+4. Run executor → execute plan, commit state
 
-1. Load profile
-2. Load state
-3. Load feature metadata
-4. Resolve dependencies
-5. Compute diff (desired vs installed)
-6. Execute uninstall → install
-7. Commit state
+#### plan Responsibilities
+
+1. Load profile, policy, state
+2. Resolve feature graph
+3. Run planner → produce plan
+4. Display plan to user
+5. Exit — state MUST remain unchanged
 
 #### Must NOT
 
 * Perform package management directly
 * Contain feature-specific logic
-* Manipulate JSON directly
+* Re-classify operations after planner has decided
 * Inspect feature internals
 
-apply is a coordinator.
+apply is a coordinator. plan is read-only.
 
 ### core (Infrastructure Layer)
 
@@ -263,32 +267,70 @@ They do not orchestrate.
 
 ## Data Flow Model
 
-The system follows this deterministic flow:
+The system follows this deterministic pipeline:
 
 ```
-Profile → Desired Features
-State → Installed Features
-Resolver → Ordered Feature List
-Diff → Install / Uninstall Sets
-Execution → State Update
+Profile + State + Policy
+    ↓
+  Resolver  (pure — builds feature DAG, topological sort)
+    ↓
+  Planner   (pure — diff + classify + decide → Plan JSON)
+    ↓
+  Executor  (impure — executes actions, commits state)
+    ↓
+  State
 ```
 
-State is both input and output of execution.
+**Planner is pure**: given the same inputs it always produces the same Plan.
+It MUST NOT modify state or invoke backends.
 
+**Executor is impure**: it calls feature scripts and backend plugins.
+It MUST commit state atomically after each successful feature operation.
+
+State is both input (current reality) and output (recorded effects) of execution.
 No other layer persists execution memory.
 
 ## Dependency Model
 
-Dependencies are declared per feature:
+Features express dependencies via two complementary mechanisms.
+
+### Concrete dependency (`depends`)
 
 ```yaml
 depends:
   - git
 ```
 
-### Rules
+Use when the dependency is on a **specific named feature**.
 
-* Represents installation prerequisite only
+### Capability dependency (`requires` / `provides`)
+
+```yaml
+# consumer
+requires:
+  - name: package_manager
+
+# provider
+provides:
+  - name: package_manager
+```
+
+Use when a feature needs *any* package manager (or runtime manager),
+not a specific one. The resolver finds all providers present in the profile
+and injects them as implicit ordering dependencies.
+
+If a required capability has no provider in the profile, `apply` aborts.
+
+### Choosing
+
+| Situation | Use |
+|---|---|
+| Need a specific named feature first | `depends` |
+| Need any package manager | `requires: [{name: package_manager}]` |
+| Need any runtime manager | `requires: [{name: runtime_manager}]` |
+
+### Rules (both mechanisms)
+
 * Used for ordering only
 * Must remain shallow
 * Cycles are forbidden
@@ -296,8 +338,9 @@ depends:
 * No conditional dependencies
 
 Dependency resolution is static.
-
 Runtime dependency logic is forbidden.
+
+See FEATURE_GUIDE.md for the full list of defined capabilities.
 
 ## State as Authority
 
@@ -387,75 +430,30 @@ the layering model is being violated.
 
 ## Feature Versioning
 
-Profiles support optional version specification for features.
+Profiles support optional version specification per feature.
 
 ### Profile Format
-
-Features are declared as a map with optional configuration:
 
 ```yaml
 features:
   git: {}
-  neovim:
-    version: "0.10.0"
   node:
     version: "20"
 ```
 
-The map format enables:
-
-* Version specification per feature
-* Future configuration options
-* Extensibility without schema changes
+Empty map `{}` is equivalent to no configuration.
 
 ### Version-Aware Orchestration
 
-The orchestrator detects version mismatches and triggers reinstallation:
+The planner classifies features with version mismatches as `replace`.
+The executor uninstalls then reinstalls, producing a clean state transition.
 
-1. Load profile with feature configurations
-2. Compare desired versions with installed versions (from state)
-3. Generate three action lists:
-   * **Install**: New features not in state
-   * **Uninstall**: Features removed from profile
-   * **Reinstall**: Features with version mismatch
+Version handling rules:
 
-Execution order:
-
-```
-1. Uninstall removed features
-2. Uninstall features to reinstall
-3. Install new features
-4. Install reinstalled features (with new version)
-```
-
-### Reinstall Logic
-
-Current implementation:
-
-```
-version mismatch → uninstall → install
-```
-
-This guarantees clean state transitions.
-
-Future enhancement path:
-
-```bash
-# Optional upgrade script
-features/node/upgrade.sh
-```
-
-If `upgrade.sh` exists, orchestrator will prefer it over reinstall.
-This allows features to implement efficient version upgrades.
-
-### Version Handling Rules
-
-* Version resolution is **version-agnostic** (dependency order only)
-* Version is passed to features via `DOTFILES_FEATURE_CONFIG_VERSION`
-* Features interpret version semantics (core does not)
-* Version recorded in state as runtime metadata (optional)
-* Empty map `{}` is equivalent to no configuration
-* Features without version support ignore `DOTFILES_FEATURE_CONFIG_VERSION`
+* Version is passed to feature scripts via `DOTFILES_FEATURE_CONFIG_VERSION`
+* Features interpret version semantics — core does not
+* Version is recorded in state as runtime metadata
+* Features that do not use versioning ignore `DOTFILES_FEATURE_CONFIG_VERSION`
 
 ## Compatibility Expectations
 
