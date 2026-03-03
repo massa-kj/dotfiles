@@ -42,12 +42,24 @@ function _Planner-ProfileVersion {
 function _Planner-StateRuntimeVersion {
     <#
     .SYNOPSIS Get the runtime resource version for a feature from state. Returns $null if none.
+    Note: Phase 4 state stores version at .runtime.version (nested).
+    Legacy Phase 3 state stores version at .version (top-level). Both are checked.
     #>
     param([string]$Feature)
 
     $resources = @(State-QueryResources -Feature $Feature)
     $rt = $resources | Where-Object { $_.kind -eq "runtime" } | Select-Object -First 1
-    if ($rt -and $rt.version) { return [string]$rt.version }
+    if ($rt) {
+        # Phase 4: nested .runtime.version
+        if ($rt.PSObject.Properties['runtime'] -and $rt.runtime -and
+            $rt.runtime.PSObject.Properties['version'] -and $rt.runtime.version) {
+            return [string]$rt.runtime.version
+        }
+        # Phase 3 compat: top-level .version
+        if ($rt.PSObject.Properties['version'] -and $rt.version) {
+            return [string]$rt.version
+        }
+    }
     return $null
 }
 
