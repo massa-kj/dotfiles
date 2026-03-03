@@ -16,7 +16,6 @@ export DOTFILES_ROOT
 source "$DOTFILES_ROOT/core/lib/env.sh"
 source "$DOTFILES_ROOT/core/lib/logger.sh"
 source "$DOTFILES_ROOT/core/lib/state.sh"
-source "$DOTFILES_ROOT/core/lib/package.sh"
 source "$DOTFILES_ROOT/core/lib/runner.sh"
 source "$DOTFILES_ROOT/core/lib/resolver.sh"
 source "$DOTFILES_ROOT/core/lib/orchestrator.sh"
