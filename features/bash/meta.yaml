@@ -1,2 +1,10 @@
 description: Bash shell configuration with custom settings
 depends: []
+
+files:
+  - src: .bashrc
+    target: ~/.bashrc
+    op: link
+  - src: .bashrc.d
+    target: ~/.bashrc.d
+    op: link
