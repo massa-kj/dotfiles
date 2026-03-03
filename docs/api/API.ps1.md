@@ -2,6 +2,26 @@
 This document is generated from source comments.
 Only **Stable** APIs are listed.
 
+## backend_registry
+Resolve, load, and dispatch backend plugin operations.
+
+### Stable APIs
+- **`Backend-Registry-LoadPolicy [PolicyFile]`**  
+  Load policy YAML into memory cache.  
+  Uses DOTFILES_POLICY_FILE if no argument is given.
+
+- **`Resolve-BackendFor <Kind> <Name>`**  
+  Return the backend_id for the given kind/name pair.  
+  Resolution order:  
+  1. Policy overrides: .<kind>.overrides.<name>.backend  (resource name, not feature name)  
+  2. Policy default:   .<kind>.default_backend  
+  3. Platform default (hardcoded)
+
+- **`Load-Backend <BackendId>`**  
+  Dot-source the backend plugin file and validate the Backend Plugin Contract.
+
+- `Backend-Call <Op> <Args...>`
+
 ## fs
 Provide file system operations for feature installation.
 
@@ -59,32 +79,6 @@ Provide logging functions with color-coded output.
   Output task execution marker for start/end of processing.
 
 
-## package
-Provide package manager abstraction for system packages and runtimes.
-
-### Stable APIs
-- **`Install-Package <Name> [Manager] [Bucket]`**  
-  Install a package using specified or detected package manager.
-
-- **`Uninstall-Package <Name> [Manager]`**  
-  Uninstall a package using specified or detected package manager.
-
-- **`Install-Runtime <Name> <Version>`**  
-  Install a runtime via mise and set as global default.
-
-- **`Uninstall-Runtime <Name> [Version]`**  
-  Uninstall a runtime via mise.
-
-- **`Get-PackageManager`**  
-  Detect available package manager on the system.
-
-- **`Test-Package <Name> [Manager]`**  
-  Check if a package is installed.
-
-- **`Test-Runtime <Name> [Version]`**  
-  Check if a runtime is installed via mise.
-
-
 ## repo
 Provide repository-based tool installation utilities.
 
@@ -107,10 +101,11 @@ Resolve feature dependencies and perform topological sorting.
 
 ### Stable APIs
 - **`Resolve-Dependencies <DesiredFeatures>`**  
-  Resolve dependencies and return topologically sorted feature list.
+  Resolve capability dependencies and return topologically sorted feature list.
 
 - **`Read-FeatureMetadata <Features>`**  
-  Read dependency metadata from meta.yaml files for all features.
+  Read dependency metadata from meta.yaml files for all features.  
+  Populates FeatureDeps, Provides, and Requires module-globals.
 
 - **`Invoke-TopoSortDFS <Feature> <DesiredFeatures>`**  
   Perform depth-first search for topological sorting.
@@ -140,46 +135,5 @@ Provide command execution utilities and helpers.
 
 - **`Get-UserConfirmation <Message> [DefaultYes]`**  
   Prompt user for yes/no confirmation and return boolean result.
-
-
-## state
-Manage state file operations safely with atomic updates.
-
-### Stable APIs
-- **`State-Init`**  
-  Initialize or validate state file.
-
-- **`State-HasFeature <Feature>`**  
-  Check if a feature exists in state.
-
-- **`State-AddPackage <Feature> <Package>`**  
-  Register a package for a feature with deduplication.
-
-- **`State-AddFile <Feature> <File>`**  
-  Register a file path for a feature with deduplication.
-
-- **`State-GetPackages <Feature>`**  
-  Retrieve package list for a feature.
-
-- **`State-GetFiles <Feature>`**  
-  Retrieve file path list for a feature.
-
-- **`State-HasFile <File>`**  
-  Check if a file path is registered under any feature.
-
-- **`State-RemoveFeature <Feature>`**  
-  Remove a feature entry from state.
-
-- **`State-ListFeatures`**  
-  Retrieve all installed feature names.
-
-- **`State-SetRuntime <Feature> <Key> <Value>`**  
-  Set runtime metadata for a feature.
-
-- **`State-GetRuntime <Feature> <Key>`**  
-  Get runtime metadata for a feature.
-
-- **`State-HasRuntime <Feature> <Key>`**  
-  Check if runtime metadata exists for a feature.
 
 

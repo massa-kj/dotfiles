@@ -38,7 +38,7 @@ from typing import Iterable, List, Optional, Tuple, Dict, Set
 # ----------------------------
 
 # Default output directory relative to repository root
-DEFAULT_OUTPUT_DIR = "docs"
+DEFAULT_OUTPUT_DIR = "docs/api"
 
 # Default output filenames
 DEFAULT_BASH_OUTPUT = "API.bash.md"

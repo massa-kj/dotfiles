@@ -2,6 +2,24 @@
 This document is generated from source comments.
 Only **Stable** APIs are listed.
 
+## backend_registry
+Resolve, load, and dispatch backend plugin operations.
+
+### Stable APIs
+- **`backend_registry_load_policy [policy_file]`**  
+  Load policy YAML into memory cache.  
+  Uses DOTFILES_POLICY_FILE if no argument is given.  
+  Idempotent: calling multiple times with the same file is safe.  
+  Non-fatal if the file does not exist – caller falls back to platform defaults.
+
+- `resolve_backend_for <kind> <name>`
+- **`load_backend <backend_id>`**  
+  Source the backend plugin file and validate the Backend Plugin Contract.  
+  Sets the active backend: subsequent backend_call() calls operate on this backend.  
+  Idempotent for the same backend_id (re-sourcing is skipped).
+
+- `backend_call <op> <args...>`
+
 ## fs
 Provide file system operations for feature installation.
 
@@ -50,29 +68,6 @@ Provide logging functions with color-coded output.
   Output task execution marker for start/end of processing.
 
 
-## package
-Provide package manager abstraction for system packages and runtimes.
-
-### Stable APIs
-- **`install_package <name>`**  
-  Install a package using detected package manager.
-
-- **`remove_package <name>`**  
-  Remove a package using detected package manager.
-
-- **`install_runtime <name> <version>`**  
-  Install a runtime via mise and set as global default.
-
-- **`remove_runtime <name> [version]`**  
-  Remove a runtime via mise.
-
-- **`has_package <name>`**  
-  Check if a package is installed.
-
-- **`has_runtime <name> [version]`**  
-  Check if a runtime is installed via mise.
-
-
 ## repo
 Provide repository-based tool installation utilities.
 
@@ -95,10 +90,14 @@ Resolve feature dependencies and perform topological sorting.
 
 ### Stable APIs
 - **`resolve_dependencies <desired_features> <output_array>`**  
-  Resolve dependencies and return topologically sorted feature list.
+  Resolve capability dependencies and return topologically sorted feature list.
 
 - **`read_feature_metadata <features>`**  
-  Read dependency metadata from meta.yaml files for all features.
+  Read dependency metadata from meta.yaml files for all features.  
+  Populates:  
+  _RESOLVER_FEATURE_DEPS  – explicit depends (merged with platform-specific)  
+  _RESOLVER_PROVIDES      – capability -> features that provide it  
+  _RESOLVER_REQUIRES      – feature -> required capabilities
 
 
 ## runner
@@ -116,46 +115,5 @@ Provide command execution utilities and helpers.
 
 - **`ensure_sudo`**  
   Request sudo privileges if on Linux/WSL platforms.
-
-
-## state
-Manage state file operations safely with atomic updates.
-
-### Stable APIs
-- **`state_init`**  
-  Initialize or validate state file.
-
-- **`state_has_feature <feature>`**  
-  Check if a feature exists in state.
-
-- **`state_add_package <feature> <package>`**  
-  Register a package for a feature with deduplication.
-
-- **`state_add_file <feature> <path>`**  
-  Register a file path for a feature with deduplication.
-
-- **`state_get_packages <feature>`**  
-  Retrieve package list for a feature (one per line).
-
-- **`state_get_files <feature>`**  
-  Retrieve file path list for a feature (one per line).
-
-- **`state_has_file <path>`**  
-  Check if a file path is registered under any feature.
-
-- **`state_remove_feature <feature>`**  
-  Remove a feature entry from state.
-
-- **`state_list_features`**  
-  Retrieve all installed feature names (one per line).
-
-- **`state_set_runtime <feature> <key> <value>`**  
-  Set runtime metadata for a feature.
-
-- **`state_get_runtime <feature> <key>`**  
-  Get runtime metadata for a feature.
-
-- **`state_has_runtime <feature> <key>`**  
-  Check if runtime metadata exists for a feature.
 
 
