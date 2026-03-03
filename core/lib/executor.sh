@@ -613,6 +613,8 @@ executor_run() {
     fi
 
     log_task "Executing plan ($action_count actions)..."
+    # Log action list for diagnostics
+    log_info "Actions: $(echo "$plan_json" | jq -r '.actions[] | "\(.operation) \(.feature)"' | tr '\n' ',' | sed 's/,$//g')"
 
     local i
     for ((i = 0; i < action_count; i++)); do

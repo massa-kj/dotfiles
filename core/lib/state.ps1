@@ -20,10 +20,10 @@
 #   State-Init                                        — keep (used by scripts)
 #   State-HasFeature <Feature>                        — keep
 #   State-ListFeatures                                — keep
-#   State-GetPackages <Feature>                       — keep (node/python uninstall)
+#   State-GetPackages <Feature>                       — DEPRECATED (Phase 4.5); no longer called by feature scripts
 #   State-GetFiles <Feature>                          — keep
-#   State-HasFile <File>                              — keep
-#   State-AddPackage <Feature> <Package>              — keep (npm:/uv: secondary packages)
+#   State-HasFile <path>                              — keep
+#   State-AddPackage <Feature> <Package>              — DEPRECATED (Phase 4.5); executor manages packages via backends
 #   State-AddFile <Feature> <File>                    — keep (git gitconfig complex merge)
 #   State-GetRuntime <Feature> <Key>                  — keep (read-only)
 #   State-HasRuntime <Feature> <Key>                  — keep (read-only)
@@ -469,6 +469,8 @@ function State-ListFeatures {
 }
 
 # State-GetPackages <Feature>
+# DEPRECATED (Phase 4.5): package resources are now managed via executor + backends.
+# Use direct state queries or remove from feature scripts entirely.
 # Return package names (strings) for the feature.
 function State-GetPackages {
     param([Parameter(Mandatory=$true)] [string]$Feature)
@@ -514,6 +516,8 @@ function State-RemoveFeature {
 }
 
 # State-AddPackage <Feature> <Package>
+# DEPRECATED (Phase 4.5): package installation is now managed by executor via backends.
+# Use State-PatchAddResource in executor instead. Remove from feature scripts.
 # Register a package resource and commit atomically.
 function State-AddPackage {
     param(

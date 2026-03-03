@@ -21,10 +21,10 @@
 #   state_init                                — keep (used by scripts)
 #   state_has_feature <feature>               — keep
 #   state_list_features                       — keep
-#   state_get_packages <feature>              — keep (node/python uninstall)
+#   state_get_packages <feature>              — DEPRECATED (Phase 4.5); no longer called by feature scripts
 #   state_get_files <feature>                 — keep
 #   state_has_file <path>                     — keep
-#   state_add_package <feature> <package>     — keep (npm:/uv: secondary packages)
+#   state_add_package <feature> <package>     — DEPRECATED (Phase 4.5); executor manages packages via backends
 #   state_add_file <feature> <path>           — keep (git gitconfig complex merge)
 #   state_get_runtime <feature> <key>         — keep (read-only)
 #   state_has_runtime <feature> <key>         — keep (read-only)
@@ -511,12 +511,14 @@ _migrate_v1_to_v2() {
 # ── Compat API ────────────────────────────────────────────────────────────────
 # Compatibility API for Phase 4+ feature scripts.
 #
-# Status after Phase 4:
+# Status after Phase 4.5:
 #   state_init, state_has_feature, state_list_features  → still used (keep)
-#   state_get_packages, state_get_files, state_has_file  → still used (keep)
-#   state_get_runtime, state_has_runtime                 → kept for reads
-#   state_add_package, state_add_file                    → used by scripts for secondary pkgs/files
-#   state_remove_feature, state_set_runtime              → DEPRECATED, see individual functions
+#   state_get_files, state_has_file                     → still used (keep)
+#   state_get_runtime, state_has_runtime                → kept for reads
+#   state_add_file                                      → used by scripts for fs resources
+#   state_get_packages                                  → DEPRECATED (Phase 4.5): use state_patch resources
+#   state_add_package                                   → DEPRECATED (Phase 4.5): use state_patch_add_resource
+#   state_remove_feature, state_set_runtime             → DEPRECATED (Phase 4), see individual functions
 
 # state_init
 # Initialize or load state. Calls state_load (which auto-migrates v1 if needed).
@@ -544,6 +546,8 @@ state_list_features() {
 }
 
 # state_get_packages <feature>
+# DEPRECATED (Phase 4.5): package resources are now managed via executor + backends.
+# Use direct jq queries on state JSON or remove entirely from feature scripts.
 # Output package names tracked for a feature (one per line).
 state_get_packages() {
     local feature="$1"
@@ -612,6 +616,8 @@ state_remove_feature() {
 }
 
 # state_add_package <feature> <package_name>
+# DEPRECATED (Phase 4.5): package installation is now managed by executor via backends.
+# Use state_patch_add_resource in executor instead. Remove from feature scripts.
 # Register a package resource for a feature and commit atomically.
 # Idempotent: replaces any existing resource with the same id.
 state_add_package() {

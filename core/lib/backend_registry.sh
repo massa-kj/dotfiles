@@ -77,16 +77,18 @@ resolve_backend_for() {
         case "$kind" in
             package|runtime)
                 # 1. Per-resource override (keyed by resource name, not feature name)
+                # Note: yq v4 returns the string "null" for missing keys.
+                # "// empty" is jq syntax and causes a parse error in yq v4.
                 backend_id=$(echo "$_BR_POLICY_DATA" | \
-                    yq eval ".${kind}.overrides.\"${name}\".backend // empty" - 2>/dev/null)
-                if [[ -n "$backend_id" ]]; then
+                    yq eval ".${kind}.overrides.\"${name}\".backend" - 2>/dev/null)
+                if [[ -n "$backend_id" && "$backend_id" != "null" ]]; then
                     echo "$backend_id"
                     return 0
                 fi
                 # 2. Kind-level default
                 backend_id=$(echo "$_BR_POLICY_DATA" | \
-                    yq eval ".${kind}.default_backend // empty" - 2>/dev/null)
-                if [[ -n "$backend_id" ]]; then
+                    yq eval ".${kind}.default_backend" - 2>/dev/null)
+                if [[ -n "$backend_id" && "$backend_id" != "null" ]]; then
                     echo "$backend_id"
                     return 0
                 fi
