@@ -21,7 +21,6 @@ $global:DOTFILES_ROOT = (Get-Item "$ScriptRoot\..").FullName
 . "$global:DOTFILES_ROOT\core\lib\env.ps1"
 . "$global:DOTFILES_ROOT\core\lib\logger.ps1"
 . "$global:DOTFILES_ROOT\core\lib\state.ps1"
-. "$global:DOTFILES_ROOT\core\lib\package.ps1"
 . "$global:DOTFILES_ROOT\core\lib\runner.ps1"
 . "$global:DOTFILES_ROOT\core\lib\resolver.ps1"
 . "$global:DOTFILES_ROOT\core\lib\orchestrator.ps1"
