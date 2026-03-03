@@ -3,3 +3,10 @@
 
 depends:
   - brew
+
+packages:
+  - fd
+  - fzf
+  - ghq
+  - ripgrep
+  - unzip
