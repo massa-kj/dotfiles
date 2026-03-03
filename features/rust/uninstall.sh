@@ -8,39 +8,13 @@ DOTFILES_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 source "$DOTFILES_ROOT/core/lib/env.sh"
 source "$DOTFILES_ROOT/core/lib/logger.sh"
-source "$DOTFILES_ROOT/core/lib/state.sh"
-source "$DOTFILES_ROOT/core/lib/package.sh"
-source "$DOTFILES_ROOT/core/lib/runner.sh"
 
 FEATURE_NAME="rust"
 
 log_task "Uninstalling feature: $FEATURE_NAME"
 
-# Ensure state is initialized
-state_init
-
-# Get installed packages from state
-mapfile -t packages < <(state_get_packages "$FEATURE_NAME")
-
-# Remove packages
-for pkg in "${packages[@]}"; do
-    if [[ -z "$pkg" ]]; then
-        continue
-    fi
-
-    if [[ "$pkg" == *"@"* ]]; then
-        # Runtime package (rust@version or rust-analyzer@version)
-        name="${pkg%%@*}"
-        version="${pkg##*@}"
-        
-        if has_runtime "$name" "$version"; then
-            log_info "Removing runtime: $name@$version"
-            remove_runtime "$name" "$version"
-        fi
-    fi
-done
-
-# Remove feature from state
-state_remove_feature "$FEATURE_NAME"
+# Resources (packages, runtimes, files) are removed by executor
+# (reads from state and calls backend uninstall).
+# Feature state entry is also removed by executor after this script completes.
 
 log_success "Feature $FEATURE_NAME uninstalled successfully"

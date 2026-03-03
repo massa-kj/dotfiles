@@ -1,3 +1,9 @@
 description: Rust toolchain with rust-analyzer language server
 depends:
   - mise
+
+runtimes:
+  # version resolved from profile config (DOTFILES_FEATURE_CONFIG_VERSION)
+  - name: rust
+  - name: rust-analyzer
+    version: "2025-05-26"
