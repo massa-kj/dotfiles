@@ -15,24 +15,15 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 $StateFile = "state\state.json"
-$ProfileV20 = "C:\temp-profile-v20.yaml"
-$ProfileV22 = "C:\temp-profile-v22.yaml"
+$FixturesDir = Join-Path $PSScriptRoot "..\fixtures"
+
+# Use test-specific policy (no backup, standard backends)
+$global:DOTFILES_POLICY_FILE = (Resolve-Path (Join-Path $FixturesDir "policy.yaml")).Path
+$ProfileV20 = (Resolve-Path (Join-Path $FixturesDir "profile-version-v20.yaml")).Path
+$ProfileV22 = (Resolve-Path (Join-Path $FixturesDir "profile-version-v22.yaml")).Path
 
 Write-Host "==> Version upgrade scenario" -ForegroundColor Cyan
 Write-Host ""
-
-Write-Host "==> Creating profile with Node 20" -ForegroundColor Green
-$ProfileContent = @"
-features:
-  git: {}
-  scoop: {}
-  mise: {}
-  node:
-    version: "20"
-"@
-
-New-Item -ItemType Directory -Force -Path (Split-Path $ProfileV20) | Out-Null
-$ProfileContent | Set-Content -Path $ProfileV20 -Encoding UTF8
 
 Write-Host "==> First apply (Node 20)" -ForegroundColor Green
 .\dotfiles.ps1 apply $ProfileV20
@@ -60,18 +51,6 @@ if ($NodePackage1 -notmatch "node@20") {
 Write-Host "    Initial package: $NodePackage1" -ForegroundColor Gray
 
 Write-Host ""
-Write-Host "==> Creating profile with Node 22 (version change)" -ForegroundColor Green
-$ProfileContent = @"
-features:
-  git: {}
-  scoop: {}
-  mise: {}
-  node:
-    version: "22"
-"@
-
-$ProfileContent | Set-Content -Path $ProfileV22 -Encoding UTF8
-
 Write-Host "==> Second apply (Node 22 - should trigger reinstall)" -ForegroundColor Green
 .\dotfiles.ps1 apply $ProfileV22
 

@@ -16,12 +16,18 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 $StateFile = "state\state.json"
+$FixturesDir = Join-Path $PSScriptRoot "..\fixtures"
+
+# Use test-specific policy (no backup, standard backends)
+$global:DOTFILES_POLICY_FILE = (Resolve-Path (Join-Path $FixturesDir "policy.yaml")).Path
+$ProfileFull  = (Resolve-Path (Join-Path $FixturesDir "profile-full.yaml")).Path
+$ProfileEmpty = (Resolve-Path (Join-Path $FixturesDir "profile-empty.yaml")).Path
 
 Write-Host "==> Uninstall scenario" -ForegroundColor Cyan
 Write-Host ""
 
 Write-Host "==> Running apply" -ForegroundColor Green
-.\dotfiles.ps1 apply profiles\windows.yaml
+.\dotfiles.ps1 apply $ProfileFull
 
 if ($LASTEXITCODE -ne 0) {
     throw "Apply command failed"
@@ -43,16 +49,8 @@ if ($InstalledFeatures.Count -eq 0) {
 
 Write-Host ""
 Write-Host "==> Creating empty profile (uninstall all)" -ForegroundColor Green
-$EmptyProfile = "C:\temp-empty-profile.yaml"
-$EmptyProfileContent = @"
-features: {}
-"@
-
-New-Item -ItemType Directory -Force -Path (Split-Path $EmptyProfile) | Out-Null
-$EmptyProfileContent | Set-Content -Path $EmptyProfile -Encoding UTF8
-
 Write-Host "==> Running apply with empty profile (triggers uninstall)" -ForegroundColor Green
-.\dotfiles.ps1 apply $EmptyProfile
+.\dotfiles.ps1 apply $ProfileEmpty
 
 if ($LASTEXITCODE -ne 0) {
     throw "Uninstall apply failed"

@@ -15,24 +15,14 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 $StateFile = "state\state.json"
-$ProfileMixed = "C:\temp-mixed-profile.yaml"
+$FixturesDir = Join-Path $PSScriptRoot "..\fixtures"
+
+# Use test-specific policy (no backup, standard backends)
+$global:DOTFILES_POLICY_FILE = (Resolve-Path (Join-Path $FixturesDir "policy.yaml")).Path
+$ProfileMixed = (Resolve-Path (Join-Path $FixturesDir "profile-version-mixed.yaml")).Path
 
 Write-Host "==> Version mixed scenario" -ForegroundColor Cyan
 Write-Host ""
-
-Write-Host "==> Creating profile with mixed version specifications" -ForegroundColor Green
-$ProfileContent = @"
-features:
-  git: {}
-  scoop: {}
-  mise: {}
-  node:
-    version: "20"
-  powershell: {}
-"@
-
-New-Item -ItemType Directory -Force -Path (Split-Path $ProfileMixed) | Out-Null
-$ProfileContent | Set-Content -Path $ProfileMixed -Encoding UTF8
 
 Write-Host "==> Running apply with mixed features" -ForegroundColor Green
 .\dotfiles.ps1 apply $ProfileMixed

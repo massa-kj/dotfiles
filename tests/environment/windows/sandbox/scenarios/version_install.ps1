@@ -15,23 +15,14 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 $StateFile = "state\state.json"
-$ProfileVersion = "C:\temp-version-profile.yaml"
+$FixturesDir = Join-Path $PSScriptRoot "..\fixtures"
+
+# Use test-specific policy (no backup, standard backends)
+$global:DOTFILES_POLICY_FILE = (Resolve-Path (Join-Path $FixturesDir "policy.yaml")).Path
+$ProfileVersion = (Resolve-Path (Join-Path $FixturesDir "profile-version-v20.yaml")).Path
 
 Write-Host "==> Version install scenario" -ForegroundColor Cyan
 Write-Host ""
-
-Write-Host "==> Creating profile with version specification" -ForegroundColor Green
-$ProfileContent = @"
-features:
-  git: {}
-  scoop: {}
-  mise: {}
-  node:
-    version: "20"
-"@
-
-New-Item -ItemType Directory -Force -Path (Split-Path $ProfileVersion) | Out-Null
-$ProfileContent | Set-Content -Path $ProfileVersion -Encoding UTF8
 
 Write-Host "==> Running apply with version-specified features" -ForegroundColor Green
 .\dotfiles.ps1 apply $ProfileVersion

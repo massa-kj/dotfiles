@@ -15,12 +15,17 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 $StateFile = "state\state.json"
+$FixturesDir = Join-Path $PSScriptRoot "..\fixtures"
+
+# Use test-specific policy (no backup, standard backends)
+$global:DOTFILES_POLICY_FILE = (Resolve-Path (Join-Path $FixturesDir "policy.yaml")).Path
+$ProfileBase = (Resolve-Path (Join-Path $FixturesDir "profile-base.yaml")).Path
 
 Write-Host "==> Idempotent scenario" -ForegroundColor Cyan
 Write-Host ""
 
 Write-Host "==> First apply" -ForegroundColor Green
-.\dotfiles.ps1 apply profiles\windows.yaml
+.\dotfiles.ps1 apply $ProfileBase
 
 if ($LASTEXITCODE -ne 0) {
     throw "First apply failed"
@@ -31,7 +36,7 @@ Write-Host "==> Capturing first state" -ForegroundColor Green
 $State1 = Get-Content $StateFile -Raw
 
 Write-Host "==> Second apply" -ForegroundColor Green
-.\dotfiles.ps1 apply profiles\windows.yaml
+.\dotfiles.ps1 apply $ProfileBase
 
 if ($LASTEXITCODE -ne 0) {
     throw "Second apply failed"

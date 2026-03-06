@@ -1,0 +1,9 @@
+# Profile with a versioned runtime (node@20).
+# Verifies: version is recorded in state, package includes version info.
+# Used by: version_install scenario, version_upgrade scenario (first apply)
+features:
+  git: {}
+  scoop: {}
+  mise: {}
+  node:
+    version: "20"
