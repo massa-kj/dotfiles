@@ -1,73 +1,27 @@
 # dotfiles
 
-A lightweight cross-platform configuration management engine.
-
-Supports:
-
-* Linux
-* WSL
-* Windows
-
-This repository allows you to define your development environment declaratively and reproduce it safely.
+A declarative and deterministic environment manager system for Linux, WSL, and Windows.
+Designed to safely reproduce development environments.
 
 ## Overview
 
-This project is built around five principles:
+This project turns environment setup into a deterministic system.
+Features are declared in a profile; the system installs, updates, and removes them safely.
 
-* **Declarative** – Profiles define what should exist.
-* **Idempotent** – Safe to run repeatedly.
-* **Modular** – Each tool is an independent feature.
-* **Safe** – Uninstall removes only tracked resources.
-* **Cross-platform** – Works across Linux, WSL, and Windows.
+Key goals:
 
-This is not a collection of configuration files.
-It is a deterministic environment orchestration system.
+* **Reproducible** — the same profile produces the same environment on any machine
+* **Safe** — uninstall removes only what the system installed, never anything else
+* **Deterministic** — given the same inputs, execution always produces the same plan
+* **Plan / Apply execution model** — changes are always previewed as a plan before execution
+* **Cross-platform** — Linux, WSL, and Windows share the same model
 
 ## Quick Start
 
-### Linux / WSL
-
-```bash
-git clone https://github.com/massa-kj/dotfiles.git ~/dotfiles
-cd ~/dotfiles
-
-./platforms/wsl/bootstrap.sh
-./dotfiles apply profiles/wsl.yaml
-```
-
-> What gets installed by bootstrap:
-> - git
-> - jq (JSON processor)
-> - yq v4+ (YAML processor)
-
-### Windows
-
-```powershell
-git clone https://github.com/massa-kj/dotfiles.git $HOME\dotfiles
-cd $HOME\dotfiles
-
-Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
-
-.\platforms\windows\bootstrap.ps1
-.\dotfiles.ps1 apply profiles\windows.yaml
-```
-
-Bootstrap installs only minimal execution dependencies.
-
-> What gets installed by bootstrap:
-> - git
-> - jq (JSON processor)
-> - yq (YAML processor)
-
-Feature installation is handled by `apply`.
-
-## Using Profiles
-
-Profiles define the desired environment.
-
-Example:
+Define your environment in a profile:
 
 ```yaml
+# profiles/wsl.yaml
 features:
   git: {}
   neovim: {}
@@ -75,90 +29,68 @@ features:
     version: "22.17.1"
 ```
 
-Run:
+Define installation strategy with policy:
+
+```yaml
+# policies/default.yaml
+package:
+  default_backend: brew
+runtime:
+  default_backend: mise
+```
+
+Preview changes without applying:
+
+```bash
+./dotfiles plan profiles/wsl.yaml
+```
+
+Apply to your machine:
 
 ```bash
 ./dotfiles apply profiles/wsl.yaml
 ```
 
-Profiles declare intent only.
+Re-running apply is safe. Features already in the correct state are skipped.
 
-They do not contain logic or installation details.
+## Design Goals
 
-## Architecture
+**Declaration over scripting**
+Profiles express intent, not procedures. The system decides how to produce the result.
 
-The system is structured into layers:
+**State over inference**
+Installed resources are recorded in state.
+The system never scans the filesystem to infer what exists.
+State is the only authority for uninstall decisions.
 
-```
-platforms → profiles → apply → core → features
-                         ↓
-                       state
-```
+**Safety over convenience**
+The system aborts rather than guesses.
+Destructive operations require explicit intent.
 
-* platforms prepare execution
-* profiles declare intent
-* apply orchestrates
-* core provides infrastructure
-* features implement tools
-* state records installed resources
+**Replaceability**
+Backends (Homebrew, mise, winget, …) and features are interchangeable adapters.
+Core does not embed tool-specific logic.
 
-For full design documentation, see [this section](#design-documents).
+## Key Concepts
 
-### Safety Model
+**Profile** — declares which features should be present and at what version.
 
-Uninstall operations remove only resources recorded in state.
+**Policy** — declares which installation strategy to use for package and runtime management.
 
-The system never scans the filesystem to infer what to delete.
+**Feature** — a self-contained module: `meta.yaml` + `install` + `uninstall` + `files/`.
 
-State is the only authority.
+**Backend** — executes package/runtime operations (brew, mise, scoop, winget, npm, uv).
 
-See `STATE_SPEC.md` for details.
+**Plan** — a deterministic list of actions computed from profile vs state.
 
-### Extending the System
-
-To create a new feature:
-
-```
-features/mytool/
-├── meta.yaml
-├── install.sh
-├── uninstall.sh
-└── files/
-```
-
-Declare dependencies in `meta.yaml`:
-
-```yaml
-depends:
-  - git
-```
-
-Use package abstraction and state APIs.
-
-See `FEATURE_GUIDE.md` for full guidelines.
+**State** — the authoritative record of what the system has installed and how to remove it.
 
 ## Documentation
 
-### Design Documents
+Design documents are in [`docs/`](docs/README.md).
 
-* **[ARCHITECTURE.md](docs/ARCHITECTURE.md)** – System design and layer responsibilities
-  * Read this to understand *why* the system is structured this way
-  * Covers: layer boundaries, data flow, architectural constraints
-
-* **[CORE.md](docs/CORE.md)** – Core module responsibilities and API stability
-  * Read this to understand infrastructure primitives and stability guarantees
-  * Covers: module responsibilities, API classification, extension rules
-
-* **[FEATURE_GUIDE.md](docs/FEATURE_GUIDE.md)** – Feature implementation rules
-  * Read this to create or modify features
-  * Covers: feature structure, meta.yaml rules, state interaction
-
-* **[STATE_SPEC.md](docs/STATE_SPEC.md)** – State schema and safety model
-  * Read this to understand state format and uninstall safety
-  * Covers: JSON schema, invariants, versioning policy
-
-### Writing Guidelines
-
-* **[DOCUMENTATION_GUIDE.md](docs/DOCUMENTATION_GUIDE.md)** – Documentation structure policy
-  * Read this before updating documentation
-  * Covers: what to document where, stability vs implementation
+| | |
+|---|---|
+| [Architecture](docs/architecture/README.md) | System design principles, execution model, and architectural boundaries |
+| [Guides](docs/guides/README.md) | How to use the system and how to implement features or backends |
+| [Specifications](docs/specs/README.md) | Formal specifications such as state schema and execution contracts |
