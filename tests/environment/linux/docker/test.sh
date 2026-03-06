@@ -3,14 +3,14 @@
 
 set -euo pipefail
 
-# Detect dotfiles root (this script is at quality/docker/test.sh)
+# Detect dotfiles root (this script is at tests/environment/linux/docker/test.sh)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DOTFILES_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+DOTFILES_ROOT="$(cd "$SCRIPT_DIR/../../../.." && pwd)"
 
 cd "$DOTFILES_ROOT"
 
 IMAGE_NAME="dotfiles-test"
-DOCKERFILE="quality/docker/Dockerfile"
+DOCKERFILE="tests/environment/linux/docker/Dockerfile"
 
 # Color output
 readonly COLOR_RESET='\033[0m'
@@ -71,7 +71,7 @@ build_image() {
 # Run scenario
 run_scenario() {
     local scenario="$1"
-    local script="./quality/docker/scenarios/${scenario}.sh"
+    local script="./tests/environment/linux/docker/scenarios/${scenario}.sh"
     
     log_step "Running ${scenario} scenario..."
     
@@ -98,7 +98,7 @@ open_shell() {
     log_info "You can manually run bootstrap and tests:"
     log_info "  ./platforms/linux/bootstrap.sh"
     log_info "  ./dotfiles apply profiles/linux.yaml"
-    log_info "  ./quality/docker/scenarios/minimal.sh"
+    log_info "  ./tests/environment/linux/docker/scenarios/minimal.sh"
     echo ""
     
     docker run --rm -it "$IMAGE_NAME" /bin/bash

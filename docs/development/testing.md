@@ -34,18 +34,18 @@ Scenarios to cover:
 * Feature removal (destroy)
 * Dependency ordering
 
-Test location: `quality/`
+Test location: `tests/`
 
 ## Environment Tests
 
 Docker-based tests simulate a fresh environment and run the full apply pipeline
 including real feature scripts.
 
-Location: `quality/docker/`
+Location: `tests/environment/linux/docker/`
 
-Run with: `quality/lint.sh` or equivalent Docker workflow.
+Run with: `tests/environment/linux/docker/test.sh` or equivalent Docker workflow.
 
-See `quality/README.md` for execution details.
+See `tests/environment/README.md` for execution details.
 
 ## What Must NOT Be Tested
 

@@ -3,9 +3,9 @@ state
 tmp
 !tmp/.gitkeep
 
-# Quality assurance artifacts
-quality/windows/logs/
-quality/windows/sandbox/dotfiles.wsb
+# Test environment artifacts
+tests/environment/windows/logs/
+tests/environment/windows/sandbox/dotfiles.wsb
 
 lazy-lock.json
 lazygit/state.yml

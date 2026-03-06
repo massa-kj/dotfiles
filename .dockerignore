@@ -1,6 +1,6 @@
-# .dockerignore for quality/docker test environment
+# .dockerignore for tests/environment/linux/docker test environment
 #
-# This file is used by quality/docker/Dockerfile for integration testing.
+# This file is used by tests/environment/linux/docker/Dockerfile for integration testing.
 # It excludes files that should not be copied into the test container.
 #
 # Note: Docker requires .dockerignore at the build context root.

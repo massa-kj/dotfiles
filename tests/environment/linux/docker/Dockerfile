@@ -18,6 +18,6 @@ COPY . .
 RUN chmod +x dotfiles \
     && chmod +x platforms/wsl/bootstrap.sh \
     && chmod +x cmd/apply.sh \
-    && find quality/docker/scenarios -type f -name "*.sh" -exec chmod +x {} \;
+    && find tests/environment/linux/docker/scenarios -type f -name "*.sh" -exec chmod +x {} \;
 
 CMD ["/bin/bash"]

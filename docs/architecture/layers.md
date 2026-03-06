@@ -108,7 +108,8 @@ dotfiles/
 ├── profiles/                  # Declarative environment definitions
 ├── policies/                  # Backend selection strategy
 ├── state/                     # Installation state (authoritative)
-└── quality/                   # Tests and lint tooling
+├── tools/                     # Tools for development
+└── tests/                     # Unit and integration tests
 ```
 
 Directory boundaries enforce layer separation.

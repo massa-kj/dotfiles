@@ -90,7 +90,7 @@ Verifies version change behavior:
 ### Run all tests
 
 ```bash
-./quality/docker/test.sh
+./tests/environment/linux/docker/test.sh
 ```
 
 This will:
@@ -105,30 +105,30 @@ This will:
 ### Run specific test
 
 ```bash
-./quality/docker/test.sh minimal
-./quality/docker/test.sh idempotent
-./quality/docker/test.sh uninstall
-./quality/docker/test.sh version-install
-./quality/docker/test.sh version-mixed
-./quality/docker/test.sh version-upgrade
+./tests/environment/linux/docker/test.sh minimal
+./tests/environment/linux/docker/test.sh idempotent
+./tests/environment/linux/docker/test.sh uninstall
+./tests/environment/linux/docker/test.sh version-install
+./tests/environment/linux/docker/test.sh version-mixed
+./tests/environment/linux/docker/test.sh version-upgrade
 ```
 
 ### Build image only
 
 ```bash
-./quality/docker/test.sh build
+./tests/environment/linux/docker/test.sh build
 ```
 
 ### Clean up
 
 ```bash
-./quality/docker/test.sh clean
+./tests/environment/linux/docker/test.sh clean
 ```
 
 ### Interactive shell (for debugging)
 
 ```bash
-./quality/docker/test.sh shell
+./tests/environment/linux/docker/test.sh shell
 ```
 
 This opens an interactive bash shell in the container. Useful for:
@@ -178,7 +178,7 @@ These are environmental concerns, not architectural guarantees.
 
 When adding new test scenarios:
 
-1. Create `quality/docker/scenarios/<name>.sh`
+1. Create `tests/environment/linux/docker/scenarios/<name>.sh`
 2. Follow `set -euo pipefail` pattern
 3. Verify state only — not implementation
 4. Exit 1 on any violation
@@ -189,7 +189,7 @@ Document guarantees being tested.
 ## File Structure
 
 ```
-quality/docker/
+tests/environment/linux/docker/
 ├── Dockerfile           # Test container definition
 ├── test.sh              # Test execution script
 ├── README.md            # This file

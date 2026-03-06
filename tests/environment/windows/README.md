@@ -1,6 +1,6 @@
-# Windows Quality Assurance Tools
+# Windows Environment Tests
 
-Testing tools for validating dotfiles behavior on Windows platform.
+Tests for validating dotfiles behavior in isolated Windows environments.
 
 ## Purpose
 
@@ -88,7 +88,7 @@ Verifies version change behavior:
 #### Run all tests
 
 ```powershell
-cd quality\windows\sandbox
+cd tests\environment\windows\sandbox
 .\test.ps1 all
 ```
 
@@ -100,14 +100,14 @@ Each test:
 3. Installs WinGet (via LogonCommand)
 4. Copies repository to `C:\dotfiles`
 5. Executes the test scenario inside Sandbox
-6. Saves logs to `quality\windows\logs\`
+6. Saves logs to `tests\environment\windows\logs\`
 
 **Note**: Sandbox windows must be closed manually after each test completes.
 
 #### Run specific test
 
 ```powershell
-cd quality\windows\sandbox
+cd tests\environment\windows\sandbox
 .\test.ps1 minimal
 .\test.ps1 idempotent
 .\test.ps1 uninstall
@@ -121,7 +121,7 @@ cd quality\windows\sandbox
 For manual debugging without running a scenario:
 
 ```powershell
-cd quality\windows\sandbox
+cd tests\environment\windows\sandbox
 .\create-wsb.ps1  # No -Scenario parameter
 .\dotfiles.wsb    # Opens Sandbox with WinGet + repo ready
 ```
@@ -138,7 +138,7 @@ Get-Content state\state.json
 With a specific scenario:
 
 ```powershell
-cd quality\windows\sandbox
+cd tests\environment\windows\sandbox
 .\create-wsb.ps1 -Scenario minimal
 .\dotfiles.wsb  # Opens Sandbox and runs scenario automatically
 ```
@@ -186,7 +186,7 @@ Restart-Computer
 WinGet is automatically installed via LogonCommand. If this fails:
 
 1. Check PowerShell window for error messages
-2. Review Sandbox logs in `quality\windows\logs\`
+2. Review Sandbox logs in `tests\environment\windows\logs\`
 3. Verify network access is enabled in Sandbox
 4. Manually test WinGet installation script
 
@@ -208,7 +208,7 @@ Then retry the command. This setting applies only to the current PowerShell sess
 
 #### Test hangs or fails
 
-1. Check logs in `quality\windows\logs\sandbox-*.log`
+1. Check logs in `tests\environment\windows\logs\sandbox-*.log`
 2. Run scenario manually in interactive Sandbox
 3. Verify `profiles\windows.yaml` is valid
 
@@ -217,7 +217,7 @@ Then retry the command. This setting applies only to the current PowerShell sess
 Test execution logs are saved to:
 
 ```
-quality\windows\logs\sandbox-{timestamp}.log
+tests\environment\windows\logs\sandbox-{timestamp}.log
 ```
 
 Logs include:
