@@ -24,7 +24,7 @@ fi
 export DOTFILES_PLATFORM
 
 # Path to state file
-DOTFILES_STATE_FILE="${DOTFILES_ROOT}/state/installed.json"
+DOTFILES_STATE_FILE="${DOTFILES_ROOT}/state/state.json"
 export DOTFILES_STATE_FILE
 
 # State directory

@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT="/dotfiles"
 PROFILE="profiles/linux.yaml"
-STATE_FILE="$ROOT/state/installed.json"
+STATE_FILE="$ROOT/state/state.json"
 
 echo "==> Idempotent scenario"
 

@@ -14,7 +14,7 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-$StateFile = "state\installed.json"
+$StateFile = "state\state.json"
 $ProfileV20 = "C:\temp-profile-v20.yaml"
 $ProfileV22 = "C:\temp-profile-v22.yaml"
 

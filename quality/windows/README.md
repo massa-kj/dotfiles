@@ -132,7 +132,7 @@ Inside Sandbox, manually run:
 # Already at C:\dotfiles
 .\platforms\windows\bootstrap.ps1
 .\dotfiles.ps1 apply profiles\windows.yaml
-Get-Content state\installed.json
+Get-Content state\state.json
 ```
 
 With a specific scenario:

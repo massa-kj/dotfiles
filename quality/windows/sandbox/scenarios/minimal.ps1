@@ -16,7 +16,7 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-$StateFile = "state\installed.json"
+$StateFile = "state\state.json"
 
 Write-Host "==> Minimal scenario" -ForegroundColor Cyan
 Write-Host ""

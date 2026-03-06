@@ -14,7 +14,7 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-$StateFile = "state\installed.json"
+$StateFile = "state\state.json"
 $ProfileVersion = "C:\temp-version-profile.yaml"
 
 Write-Host "==> Version install scenario" -ForegroundColor Cyan

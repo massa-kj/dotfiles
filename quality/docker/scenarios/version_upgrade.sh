@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT="/dotfiles"
 PROFILE_V20="/tmp/profile_v20.yaml"
 PROFILE_V22="/tmp/profile_v22.yaml"
-STATE_FILE="$ROOT/state/installed.json"
+STATE_FILE="$ROOT/state/state.json"
 
 echo "==> Version upgrade scenario"
 

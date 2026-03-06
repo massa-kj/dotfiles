@@ -14,7 +14,7 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-$StateFile = "state\installed.json"
+$StateFile = "state\state.json"
 $ProfileMixed = "C:\temp-mixed-profile.yaml"
 
 Write-Host "==> Version mixed scenario" -ForegroundColor Cyan

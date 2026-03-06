@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT="/dotfiles"
 PROFILE_MIXED="/tmp/mixed_profile.yaml"
-STATE_FILE="$ROOT/state/installed.json"
+STATE_FILE="$ROOT/state/state.json"
 
 echo "==> Version mixed scenario"
 

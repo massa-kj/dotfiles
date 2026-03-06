@@ -134,7 +134,7 @@ This will:
 This opens an interactive bash shell in the container. Useful for:
 - Manually running bootstrap: `./platforms/linux/bootstrap.sh`
 - Testing apply command: `./dotfiles apply profiles/linux.yaml`
-- Inspecting state: `cat state/installed.json`
+- Inspecting state: `cat state/state.json`
 - Debugging failures
 
 ## Expected Behavior

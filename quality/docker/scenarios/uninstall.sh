@@ -5,7 +5,7 @@ ROOT="/dotfiles"
 PROFILE_FULL="profiles/linux.yaml"
 PROFILE_PARTIAL="/tmp/partial.yaml"
 PROFILE_EMPTY="/tmp/empty.yaml"
-STATE_FILE="$ROOT/state/installed.json"
+STATE_FILE="$ROOT/state/state.json"
 
 echo "==> Uninstall scenario"
 
