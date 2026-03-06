@@ -2,14 +2,17 @@
 set -euo pipefail
 
 ROOT="/dotfiles"
-PROFILE_FULL="profiles/linux.yaml"
-PROFILE_PARTIAL="/tmp/partial.yaml"
-PROFILE_EMPTY="/tmp/empty.yaml"
+PROFILE_FULL="$ROOT/tests/environment/linux/docker/fixtures/profile-full.yaml"
+PROFILE_PARTIAL="$ROOT/tests/environment/linux/docker/fixtures/profile-base.yaml"
+PROFILE_EMPTY="$ROOT/tests/environment/linux/docker/fixtures/profile-empty.yaml"
 STATE_FILE="$ROOT/state/state.json"
 
 echo "==> Uninstall scenario"
 
 cd "$ROOT"
+
+# Use test-specific policy (no backup, standard backends)
+export DOTFILES_POLICY_FILE="$ROOT/tests/environment/linux/docker/fixtures/policy.yaml"
 
 echo "==> First apply (install phase)"
 ./dotfiles apply "$PROFILE_FULL"
@@ -36,13 +39,6 @@ echo "do not delete" > "$SENTINEL"
 # Test 1: Partial uninstall
 echo ""
 echo "==> Test 1: Partial uninstall"
-echo "==> Creating partial profile (keeping bash and git only)"
-cat > "$PROFILE_PARTIAL" <<EOF
-features:
-  bash: {}
-  git: {}
-EOF
-
 echo "==> Running apply with partial profile"
 ./dotfiles apply "$PROFILE_PARTIAL"
 
@@ -81,11 +77,6 @@ echo "==> Partial uninstall passed"
 # Test 2: Full uninstall
 echo ""
 echo "==> Test 2: Full uninstall"
-echo "==> Creating empty profile"
-cat > "$PROFILE_EMPTY" <<EOF
-features: {}
-EOF
-
 echo "==> Running apply with empty profile (full uninstall)"
 ./dotfiles apply "$PROFILE_EMPTY"
 

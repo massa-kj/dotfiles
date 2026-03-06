@@ -38,14 +38,11 @@ Test location: `tests/`
 
 ## Environment Tests
 
-Docker-based tests simulate a fresh environment and run the full apply pipeline
-including real feature scripts.
-
-Location: `tests/environment/linux/docker/`
-
-Run with: `tests/environment/linux/docker/test.sh` or equivalent Docker workflow.
-
-See `tests/environment/README.md` for execution details.
+| Environment | Description |
+|-------------|-------------|
+| [Environment](../../tests/environment/README.md) | Full apply execution in isolated environments (Docker, Windows Sandbox) |
+| [Linux (Docker)](../../tests/environment/linux/docker/README.md) | Full apply execution in a fresh Ubuntu container |
+| [Windows (Sandbox)](../../tests/environment/windows/README.md) | Full apply execution in a disposable Windows Sandbox instance |
 
 ## What Must NOT Be Tested
 

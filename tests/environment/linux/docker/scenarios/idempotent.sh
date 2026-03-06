@@ -2,12 +2,15 @@
 set -euo pipefail
 
 ROOT="/dotfiles"
-PROFILE="profiles/linux.yaml"
+PROFILE="$ROOT/tests/environment/linux/docker/fixtures/profile-base.yaml"
 STATE_FILE="$ROOT/state/state.json"
 
 echo "==> Idempotent scenario"
 
 cd "$ROOT"
+
+# Use test-specific policy (no backup, standard backends)
+export DOTFILES_POLICY_FILE="$ROOT/tests/environment/linux/docker/fixtures/policy.yaml"
 
 echo "==> First apply"
 ./dotfiles apply "$PROFILE"

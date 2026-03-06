@@ -2,24 +2,16 @@
 set -euo pipefail
 
 ROOT="/dotfiles"
-PROFILE_V20="/tmp/profile_v20.yaml"
-PROFILE_V22="/tmp/profile_v22.yaml"
+PROFILE_V20="$ROOT/tests/environment/linux/docker/fixtures/profile-version-v20.yaml"
+PROFILE_V22="$ROOT/tests/environment/linux/docker/fixtures/profile-version-v22.yaml"
 STATE_FILE="$ROOT/state/state.json"
 
 echo "==> Version upgrade scenario"
 
 cd "$ROOT"
 
-echo "==> Creating profile with Node 20"
-cat > "$PROFILE_V20" <<EOF
-features:
-  bash: {}
-  brew: {}
-  git: {}
-  mise: {}
-  node:
-    version: "20"
-EOF
+# Use test-specific policy (no backup, standard backends)
+export DOTFILES_POLICY_FILE="$ROOT/tests/environment/linux/docker/fixtures/policy.yaml"
 
 echo "==> First apply (Node 20)"
 ./dotfiles apply "$PROFILE_V20"
@@ -43,17 +35,6 @@ if [[ ! "$NODE_PACKAGE" =~ ^node@20 ]]; then
 fi
 
 echo ""
-echo "==> Creating profile with Node 22 (version change)"
-cat > "$PROFILE_V22" <<EOF
-features:
-  bash: {}
-  brew: {}
-  git: {}
-  mise: {}
-  node:
-    version: "22"
-EOF
-
 echo "==> Second apply (Node 22 - should trigger reinstall)"
 ./dotfiles apply "$PROFILE_V22"
 

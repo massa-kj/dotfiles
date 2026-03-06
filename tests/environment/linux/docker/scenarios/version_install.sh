@@ -2,23 +2,15 @@
 set -euo pipefail
 
 ROOT="/dotfiles"
-PROFILE_VERSION="/tmp/version_profile.yaml"
+PROFILE_VERSION="$ROOT/tests/environment/linux/docker/fixtures/profile-version-v20.yaml"
 STATE_FILE="$ROOT/state/state.json"
 
 echo "==> Version install scenario"
 
 cd "$ROOT"
 
-echo "==> Creating profile with version specification"
-cat > "$PROFILE_VERSION" <<EOF
-features:
-  bash: {}
-  brew: {}
-  git: {}
-  mise: {}
-  node:
-    version: "20"
-EOF
+# Use test-specific policy (no backup, standard backends)
+export DOTFILES_POLICY_FILE="$ROOT/tests/environment/linux/docker/fixtures/policy.yaml"
 
 echo "==> Running apply with version-specified features"
 ./dotfiles apply "$PROFILE_VERSION"
