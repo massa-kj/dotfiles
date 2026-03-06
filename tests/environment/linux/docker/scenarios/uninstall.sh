@@ -11,9 +11,6 @@ echo "==> Uninstall scenario"
 
 cd "$ROOT"
 
-echo "==> Running bootstrap"
-./platforms/linux/bootstrap.sh
-
 echo "==> First apply (install phase)"
 ./dotfiles apply "$PROFILE_FULL"
 

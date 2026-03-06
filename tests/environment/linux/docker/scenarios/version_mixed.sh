@@ -9,9 +9,6 @@ echo "==> Version mixed scenario"
 
 cd "$ROOT"
 
-echo "==> Running bootstrap"
-./platforms/linux/bootstrap.sh
-
 echo "==> Creating profile with mixed version specifications"
 cat > "$PROFILE_MIXED" <<EOF
 features:

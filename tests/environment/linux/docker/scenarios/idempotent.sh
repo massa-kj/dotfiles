@@ -9,9 +9,6 @@ echo "==> Idempotent scenario"
 
 cd "$ROOT"
 
-echo "==> Running bootstrap"
-./platforms/linux/bootstrap.sh
-
 echo "==> First apply"
 ./dotfiles apply "$PROFILE"
 

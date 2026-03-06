@@ -9,6 +9,7 @@ DOTFILES_ROOT="$(cd "$SCRIPT_DIR/../../../.." && pwd)"
 
 cd "$DOTFILES_ROOT"
 
+IMAGE_BASE="dotfiles-base"
 IMAGE_NAME="dotfiles-test"
 DOCKERFILE="tests/environment/linux/docker/Dockerfile"
 
@@ -35,7 +36,8 @@ Usage: $(basename "$0") <command>
 Run Docker-based integration tests for dotfiles.
 
 Commands:
-  build              Build test image
+  build              Build bootstrapped test image (default for scenarios)
+  build-base         Build base image only (for bootstrap testing)
   minimal            Run minimal scenario
   idempotent         Run idempotent scenario
   uninstall          Run uninstall scenario
@@ -43,29 +45,40 @@ Commands:
   version-upgrade    Run version upgrade scenario
   version-mixed      Run version mixed scenario
   all                Run all scenarios (default)
-  shell              Open interactive shell in container
-  clean              Remove test image
+  shell              Open interactive shell in bootstrapped container
+  base-shell         Open interactive shell in base container
+  clean              Remove test images
 
 Examples:
-  $(basename "$0") minimal           # Run minimal test only
-  $(basename "$0") uninstall         # Run uninstall test only
-  $(basename "$0") version-upgrade   # Run version upgrade test
-  $(basename "$0") build             # Build image only
-  $(basename "$0") shell             # Open shell for manual testing
+  $(basename "$0") build            # Build bootstrapped image
+  $(basename "$0") minimal          # Run minimal test only
+  $(basename "$0") all              # Run all scenarios
+  $(basename "$0") shell            # Shell with bootstrap done
+  $(basename "$0") base-shell       # Shell before bootstrap
 
 EOF
     exit "$exit_code"
 }
 
-# Build test image
+# Build base image (platforms/bootstrap stage)
+build_base_image() {
+    log_step "Building base image (pre-bootstrap)..."
+    log_info "Target: base  →  $IMAGE_BASE"
+
+    docker build -f "$DOCKERFILE" --target base -t "$IMAGE_BASE" .
+
+    log_step "Base image build complete"
+}
+
+# Build bootstrapped test image
 build_image() {
-    log_step "Building test image..."
+    log_step "Building bootstrapped test image..."
+    log_info "Target: bootstrapped  →  $IMAGE_NAME"
     log_info "Dockerfile: $DOCKERFILE"
-    log_info "Context: $DOTFILES_ROOT"
-    
-    docker build -f "$DOCKERFILE" -t "$IMAGE_NAME" .
-    
-    log_step "Build complete"
+
+    docker build -f "$DOCKERFILE" --target bootstrapped -t "$IMAGE_NAME" .
+
+    log_step "Bootstrapped image build complete"
 }
 
 # Run scenario
@@ -85,23 +98,34 @@ run_scenario() {
     return 0
 }
 
-# Clean test image
+# Clean test images
 clean_image() {
-    log_step "Removing test image..."
+    log_step "Removing test images..."
     docker rmi "$IMAGE_NAME" 2>/dev/null || true
+    docker rmi "$IMAGE_BASE" 2>/dev/null || true
     log_step "Clean complete"
 }
 
-# Open interactive shell
+# Open interactive shell in bootstrapped container
 open_shell() {
-    log_step "Opening interactive shell in container..."
-    log_info "You can manually run bootstrap and tests:"
-    log_info "  ./platforms/linux/bootstrap.sh"
+    log_step "Opening interactive shell in bootstrapped container..."
+    log_info "Bootstrap is already done. You can run:"
     log_info "  ./dotfiles apply profiles/linux.yaml"
     log_info "  ./tests/environment/linux/docker/scenarios/minimal.sh"
     echo ""
-    
+
     docker run --rm -it "$IMAGE_NAME" /bin/bash
+}
+
+# Open interactive shell in base container (before bootstrap)
+open_base_shell() {
+    log_step "Opening interactive shell in base container (pre-bootstrap)..."
+    log_info "Bootstrap has not run yet. You can run:"
+    log_info "  ./platforms/linux/bootstrap.sh"
+    log_info "  ./dotfiles apply profiles/linux.yaml"
+    echo ""
+
+    docker run --rm -it "$IMAGE_BASE" /bin/bash
 }
 
 # Main
@@ -110,6 +134,9 @@ COMMAND="${1:-}"
 case "$COMMAND" in
     build)
         build_image
+        ;;
+    build-base)
+        build_base_image
         ;;
     minimal)
         build_image
@@ -148,6 +175,10 @@ case "$COMMAND" in
     shell)
         build_image
         open_shell
+        ;;
+    base-shell)
+        build_base_image
+        open_base_shell
         ;;
     clean)
         clean_image

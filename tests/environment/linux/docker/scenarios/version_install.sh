@@ -9,9 +9,6 @@ echo "==> Version install scenario"
 
 cd "$ROOT"
 
-echo "==> Running bootstrap"
-./platforms/linux/bootstrap.sh
-
 echo "==> Creating profile with version specification"
 cat > "$PROFILE_VERSION" <<EOF
 features:

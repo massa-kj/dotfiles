@@ -9,9 +9,6 @@ echo "==> Minimal scenario"
 
 cd "$ROOT"
 
-echo "==> Running bootstrap"
-./platforms/linux/bootstrap.sh
-
 echo "==> Running apply"
 ./dotfiles apply "$PROFILE"
 

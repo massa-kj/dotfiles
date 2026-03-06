@@ -85,22 +85,33 @@ Verifies version change behavior:
 * Old version is removed before new installation
 * State is updated with new version and package
 
+## Docker Image Stages
+
+The `Dockerfile` uses a two-stage build:
+
+| Stage | Image | Contents | Use case |
+|-------|-------|----------|----------|
+| `base` | `dotfiles-base` | OS deps + repo copy | Testing bootstrap itself |
+| `bootstrapped` | `dotfiles-test` | base + bootstrap run | Scenario tests (fast) |
+
+Scenario tests use the `bootstrapped` image, so bootstrap overhead is paid once at
+build time rather than at every `docker run`.
+
 ## Quick Start
 
 ### Run all tests
 
 ```bash
-./tests/environment/linux/docker/test.sh
+./tests/environment/linux/docker/test.sh all
 ```
 
 This will:
-1. Build the test image
-2. Run minimal scenario
-3. Run idempotent scenario
-4. Run uninstall scenario
-5. Run version_install scenario
-6. Run version_mixed scenario
-7. Run version_upgrade scenario
+1. Build the bootstrapped image (`dotfiles-test`)
+2. Run idempotent scenario
+3. Run uninstall scenario
+4. Run version_install scenario
+5. Run version_mixed scenario
+6. Run version_upgrade scenario
 
 ### Run specific test
 
@@ -113,10 +124,14 @@ This will:
 ./tests/environment/linux/docker/test.sh version-upgrade
 ```
 
-### Build image only
+### Build images
 
 ```bash
+# Build bootstrapped image (used by scenario tests)
 ./tests/environment/linux/docker/test.sh build
+
+# Build base image only (pre-bootstrap)
+./tests/environment/linux/docker/test.sh build-base
 ```
 
 ### Clean up
@@ -128,14 +143,21 @@ This will:
 ### Interactive shell (for debugging)
 
 ```bash
+# Shell in bootstrapped container (bootstrap already done)
 ./tests/environment/linux/docker/test.sh shell
+
+# Shell in base container (before bootstrap)
+./tests/environment/linux/docker/test.sh base-shell
 ```
 
-This opens an interactive bash shell in the container. Useful for:
-- Manually running bootstrap: `./platforms/linux/bootstrap.sh`
+`shell` is useful for:
 - Testing apply command: `./dotfiles apply profiles/linux.yaml`
+- Running a scenario manually: `./tests/environment/linux/docker/scenarios/minimal.sh`
 - Inspecting state: `cat state/state.json`
-- Debugging failures
+
+`base-shell` is useful for:
+- Debugging bootstrap itself: `./platforms/linux/bootstrap.sh`
+- Verifying pre-bootstrap environment
 
 ## Expected Behavior
 
@@ -190,10 +212,10 @@ Document guarantees being tested.
 
 ```
 tests/environment/linux/docker/
-├── Dockerfile           # Test container definition
+├── Dockerfile           # Two-stage build (base / bootstrapped)
 ├── test.sh              # Test execution script
 ├── README.md            # This file
-└── scenarios/           # Test scenarios
+└── scenarios/           # Test scenarios (run against bootstrapped image)
     ├── minimal.sh       # Basic execution test
     ├── idempotent.sh    # Determinism test
     ├── uninstall.sh     # Safe removal test

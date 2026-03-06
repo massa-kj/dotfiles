@@ -10,9 +10,6 @@ echo "==> Version upgrade scenario"
 
 cd "$ROOT"
 
-echo "==> Running bootstrap"
-./platforms/linux/bootstrap.sh
-
 echo "==> Creating profile with Node 20"
 cat > "$PROFILE_V20" <<EOF
 features:
