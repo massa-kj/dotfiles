@@ -13,8 +13,10 @@ echo "==> Uninstall scenario"
 
 cd "$ROOT"
 
-# Use test-specific policy (no backup, standard backends)
-export DOTFILES_POLICY_FILE="$ROOT/tests/environment/linux/docker/fixtures/policy.yaml"
+# Use test-specific policy that does not require a package-manager feature.
+export DOTFILES_POLICY_FILE="$ROOT/tests/environment/linux/docker/fixtures/policy-apt.yaml"
+
+rm -rf /root/.bashrc /root/.bashrc.d
 
 echo "==> First apply (install phase)"
 ./dotfiles apply "$PROFILE_FULL"
