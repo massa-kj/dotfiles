@@ -50,19 +50,25 @@ _state_ensure_loaded() {
     fi
 }
 
+# _state_file_path
+# Resolve authoritative state file path from env module.
+_state_file_path() {
+    if declare -F dotfiles_state_file_path >/dev/null 2>&1; then
+        dotfiles_state_file_path
+        return 0
+    fi
+    log_error "_state_file_path: dotfiles_state_file_path is not available"
+    return 1
+}
+
 # ── Stable Core API ───────────────────────────────────────────────────────────
 
 # state_load
 # Load state from disk into in-memory cache.
-# If v1 is detected, migrate automatically and commit.
-# Creates empty v2 state if the file does not exist.
+# Creates empty v3 state if the file does not exist.
 state_load() {
-    if [[ -z "${DOTFILES_STATE_FILE:-}" ]]; then
-        log_error "state_load: DOTFILES_STATE_FILE is not set"
-        return 1
-    fi
-
-    local path="$DOTFILES_STATE_FILE"
+    local path
+    path="$(_state_file_path)" || return 1
     local dir
     dir="$(dirname "$path")"
 
@@ -216,12 +222,8 @@ state_validate() {
 state_commit_atomic() {
     local new_json="$1"
 
-    if [[ -z "${DOTFILES_STATE_FILE:-}" ]]; then
-        log_error "state_commit_atomic: DOTFILES_STATE_FILE is not set"
-        return 1
-    fi
-
-    local path="$DOTFILES_STATE_FILE"
+    local path
+    path="$(_state_file_path)" || return 1
     local tmp="${path}.tmp"
 
     if [[ -z "$new_json" ]]; then
@@ -383,12 +385,8 @@ _state_transform_v2_to_v3() {
 # Performs: timestamped backup → transform → validate → atomic commit.
 # Called exclusively by cmd/migrate.sh; NOT called automatically by state_load.
 state_migrate_v2_to_v3() {
-    if [[ -z "${DOTFILES_STATE_FILE:-}" ]]; then
-        log_error "state_migrate_v2_to_v3: DOTFILES_STATE_FILE is not set"
-        return 1
-    fi
-
-    local path="$DOTFILES_STATE_FILE"
+    local path
+    path="$(_state_file_path)" || return 1
     local timestamp
     timestamp=$(date +%Y%m%d_%H%M%S)
     local backup="${path}.bak.${timestamp}"
@@ -423,7 +421,8 @@ state_migrate_v2_to_v3() {
 # Migrate the in-memory v1 state to v2: backup → transform → commit atomically.
 # Called by cmd/migrate.sh for v1 state, before chaining into state_migrate_v2_to_v3.
 state_migrate() {
-    local path="$DOTFILES_STATE_FILE"
+    local path
+    path="$(_state_file_path)" || return 1
     local backup="${path}.bak"
 
     # Backup current file

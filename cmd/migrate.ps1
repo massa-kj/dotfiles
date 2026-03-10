@@ -83,12 +83,14 @@ function Show-MigrationDiff {
 }
 
 function Update-ProfileFeatures {
-    param([string]$ProfilesDir)
-
-    $profileDir = Join-Path $DOTFILES_ROOT "profiles"
+    $profileDir = $global:DOTFILES_PROFILES_DIR
+    if (-not $profileDir) {
+        Log-Error "migrate -Profiles: DOTFILES_PROFILES_DIR is not set"
+        return $false
+    }
     if (-not (Test-Path $profileDir)) {
         Log-Warn "migrate: profiles directory not found: $profileDir (skipping)"
-        return
+        return $true
     }
 
     if (-not (Get-Command yq -ErrorAction SilentlyContinue)) {
@@ -130,12 +132,30 @@ function Update-ProfileFeatures {
 Log-Task "Migrating dotfiles state"
 
 # 1. Read the state file directly (do NOT call State-Init)
-if (-not $global:DOTFILES_STATE_FILE) {
-    Log-Error "migrate: DOTFILES_STATE_FILE is not set"
+if (-not (Get-Command Get-DotfilesStateFilePath -ErrorAction SilentlyContinue)) {
+    Log-Error "migrate: Get-DotfilesStateFilePath is not available"
     exit 1
 }
 
-$statePath = $global:DOTFILES_STATE_FILE
+$statePath = Get-DotfilesStateFilePath
+$legacyStatePath = Join-Path $DOTFILES_ROOT "state\state.json"
+
+$stateDir = Split-Path -Parent $statePath
+if (-not (Test-Path $stateDir)) {
+    New-Item -ItemType Directory -Path $stateDir -Force | Out-Null
+}
+
+# Legacy state physical move (copy + backup, keep original file).
+if (-not (Test-Path $statePath) -and (Test-Path $legacyStatePath)) {
+    $timestamp = Get-Date -Format 'yyyyMMdd_HHmmss'
+    $legacyBackup = "$legacyStatePath.bak.$timestamp"
+
+    Copy-Item -Path $legacyStatePath -Destination $legacyBackup -Force
+    Copy-Item -Path $legacyStatePath -Destination $statePath -Force
+
+    Log-Info "Legacy state copied: $legacyStatePath -> $statePath"
+    Log-Info "Legacy backup created: $legacyBackup"
+}
 
 if (-not (Test-Path $statePath)) {
     Log-Info "No state file found at $statePath — nothing to migrate."

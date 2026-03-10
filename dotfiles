@@ -20,6 +20,7 @@ A declarative environment management system.
 Available commands:
   apply <profile>    Apply a dotfiles profile
   plan  <profile>    Show what apply would do (no changes made)
+  migrate            Migrate state/profile keys to current schema
 
 Options:
   plan --verbose     Also list noop (already up-to-date) features
@@ -28,6 +29,7 @@ Examples:
   dotfiles apply profiles/wsl.yaml
   dotfiles plan  profiles/wsl.yaml
   dotfiles plan  profiles/wsl.yaml --verbose
+  dotfiles migrate --dry-run
 
 EOF
     exit 1
@@ -48,6 +50,9 @@ case "$COMMAND" in
         ;;
     plan)
         exec "$DOTFILES_ROOT/cmd/plan.sh" "$@"
+        ;;
+    migrate)
+        exec "$DOTFILES_ROOT/cmd/migrate.sh" "$@"
         ;;
     help|--help|-h)
         usage

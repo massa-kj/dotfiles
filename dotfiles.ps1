@@ -20,6 +20,7 @@ A declarative environment management system.
 Available commands:
   apply <profile>    Apply a dotfiles profile
   plan  <profile>    Show what apply would do (no changes made)
+  migrate            Migrate state/profile keys to current schema
 
 Options:
   plan -Verbose      Also list noop (already up-to-date) features
@@ -28,6 +29,7 @@ Examples:
   .\dotfiles.ps1 apply profiles\windows.yaml
   .\dotfiles.ps1 plan  profiles\windows.yaml
   .\dotfiles.ps1 plan  profiles\windows.yaml -Verbose
+  .\dotfiles.ps1 migrate -DryRun
 
 "@
     exit 1
@@ -49,6 +51,10 @@ switch ($Command) {
     }
     "plan" {
         & "$ScriptRoot\cmd\plan.ps1" @CommandArgs
+        exit $LASTEXITCODE
+    }
+    "migrate" {
+        & "$ScriptRoot\cmd\migrate.ps1" @CommandArgs
         exit $LASTEXITCODE
     }
     "help" {

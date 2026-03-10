@@ -62,19 +62,23 @@ function _State-ToJson {
     return $Obj | ConvertTo-Json -Depth 20
 }
 
+# Resolve authoritative state file path from env module.
+function _State-GetFilePath {
+    if (-not (Get-Command Get-DotfilesStateFilePath -ErrorAction SilentlyContinue)) {
+        Log-Error "_State-GetFilePath: Get-DotfilesStateFilePath is not available"
+        return $null
+    }
+    return Get-DotfilesStateFilePath
+}
+
 # ── Stable Core API ───────────────────────────────────────────────────────────
 
 # State-Load
 # Load state from disk into in-memory cache.
-# If v1 is detected, migrate automatically and commit.
-# Creates empty v2 state if the file does not exist.
+# Creates empty v3 state if the file does not exist.
 function State-Load {
-    if (-not $global:DOTFILES_STATE_FILE) {
-        Log-Error "State-Load: DOTFILES_STATE_FILE is not set"
-        return $false
-    }
-
-    $path = $global:DOTFILES_STATE_FILE
+    $path = _State-GetFilePath
+    if (-not $path) { return $false }
     $dir  = Split-Path -Parent $path
 
     if (-not (Test-Path $dir)) {
@@ -204,12 +208,8 @@ function State-CommitAtomic {
         $StateObject
     )
 
-    if (-not $global:DOTFILES_STATE_FILE) {
-        Log-Error "State-CommitAtomic: DOTFILES_STATE_FILE is not set"
-        return $false
-    }
-
-    $path = $global:DOTFILES_STATE_FILE
+    $path = _State-GetFilePath
+    if (-not $path) { return $false }
     $tmp  = "$path.tmp"
 
     try {
@@ -351,7 +351,8 @@ function _Invoke-TransformV2ToV3 {
 # Performs: timestamped backup → transform → validate → atomic commit.
 # Called exclusively by cmd/migrate.ps1; NOT called automatically by State-Load.
 function State-MigrateV2ToV3 {
-    $path      = $global:DOTFILES_STATE_FILE
+    $path      = _State-GetFilePath
+    if (-not $path) { return $false }
     $timestamp = Get-Date -Format 'yyyyMMdd_HHmmss'
     $backup    = "$path.bak.$timestamp"
 
@@ -384,7 +385,8 @@ function State-MigrateV2ToV3 {
 # Migrate the in-memory v1 state to v2: backup → transform → commit atomically.
 # Called by cmd/migrate.ps1 for v1 state, before chaining into State-MigrateV2ToV3.
 function State-Migrate {
-    $path   = $global:DOTFILES_STATE_FILE
+    $path   = _State-GetFilePath
+    if (-not $path) { return $false }
     $backup = "$path.bak"
 
     if (Test-Path $path) {

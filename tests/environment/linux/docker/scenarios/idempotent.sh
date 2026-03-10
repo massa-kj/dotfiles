@@ -3,7 +3,9 @@ set -euo pipefail
 
 ROOT="/dotfiles"
 PROFILE="$ROOT/tests/environment/linux/docker/fixtures/profile-base.yaml"
-STATE_FILE="$ROOT/state/state.json"
+export XDG_CONFIG_HOME="/tmp/dotfiles-xdg-config"
+export XDG_STATE_HOME="/tmp/dotfiles-xdg-state"
+STATE_FILE="$XDG_STATE_HOME/dotfiles/state.json"
 
 echo "==> Idempotent scenario"
 
@@ -27,18 +29,18 @@ if ! diff -u /tmp/state_before.json "$STATE_FILE"; then
   exit 1
 fi
 
-echo "==> Verifying no duplicate package entries"
+echo "==> Verifying no duplicate resource id entries per feature"
 jq -e '
-  .features[]? 
-  | (.packages // []) as $p
-  | ($p | length) == ($p | unique | length)
+  .features[]?
+  | (.resources // []) as $r
+  | (($r | map(.id) | length) == ($r | map(.id) | unique | length))
 ' "$STATE_FILE" > /dev/null
 
-echo "==> Verifying no duplicate file entries"
+echo "==> Verifying no duplicate fs.path entries across features"
 jq -e '
-  .features[]? 
-  | (.files // []) as $f
-  | ($f | length) == ($f | unique | length)
+  ([.features[]?.resources[]? | select(.kind == "fs") | .fs.path] | length)
+  ==
+  ([.features[]?.resources[]? | select(.kind == "fs") | .fs.path] | unique | length)
 ' "$STATE_FILE" > /dev/null
 
 echo "==> Idempotent scenario PASSED"

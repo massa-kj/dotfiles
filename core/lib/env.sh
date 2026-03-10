@@ -23,34 +23,54 @@ else
 fi
 export DOTFILES_PLATFORM
 
-# Path to state file
-DOTFILES_STATE_FILE="${DOTFILES_ROOT}/state/state.json"
-export DOTFILES_STATE_FILE
+# XDG base directories (Linux/WSL defaults)
+DOTFILES_XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
+DOTFILES_XDG_STATE_HOME="${XDG_STATE_HOME:-$HOME/.local/state}"
+DOTFILES_XDG_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
+export DOTFILES_XDG_CONFIG_HOME
+export DOTFILES_XDG_STATE_HOME
+export DOTFILES_XDG_DATA_HOME
 
-# State directory
-DOTFILES_STATE_DIR="${DOTFILES_ROOT}/state"
-export DOTFILES_STATE_DIR
+# Dotfiles XDG namespaces
+DOTFILES_CONFIG_HOME="${DOTFILES_XDG_CONFIG_HOME}/dotfiles"
+DOTFILES_STATE_HOME="${DOTFILES_XDG_STATE_HOME}/dotfiles"
+DOTFILES_DATA_HOME="${DOTFILES_XDG_DATA_HOME}/dotfiles"
+export DOTFILES_CONFIG_HOME
+export DOTFILES_STATE_HOME
+export DOTFILES_DATA_HOME
+
+# dotfiles_state_file_path
+# Return authoritative state file path.
+dotfiles_state_file_path() {
+    echo "${DOTFILES_STATE_HOME}/state.json"
+}
 
 # Features directory
 DOTFILES_FEATURES_DIR="${DOTFILES_ROOT}/features"
 export DOTFILES_FEATURES_DIR
 
-# Profiles directory
-DOTFILES_PROFILES_DIR="${DOTFILES_ROOT}/profiles"
+# Profiles directory (override allowed)
+if [[ -z "${DOTFILES_PROFILES_DIR:-}" ]]; then
+    DOTFILES_PROFILES_DIR="${DOTFILES_CONFIG_HOME}/profiles"
+fi
 export DOTFILES_PROFILES_DIR
 
 # Backend plugins directory
 DOTFILES_BACKENDS_DIR="${DOTFILES_ROOT}/backends"
 export DOTFILES_BACKENDS_DIR
 
+# Policies directory (for default policy resolution)
+DOTFILES_POLICIES_DIR="${DOTFILES_CONFIG_HOME}/policies"
+export DOTFILES_POLICIES_DIR
+
 # Policy file: prefer platform-specific, fall back to generic default.
 # Can be overridden by setting DOTFILES_POLICY_FILE before sourcing env.sh.
 if [[ -z "${DOTFILES_POLICY_FILE:-}" ]]; then
-    _policy_candidate="${DOTFILES_ROOT}/policies/default.${DOTFILES_PLATFORM}.yaml"
+    _policy_candidate="${DOTFILES_POLICIES_DIR}/default.${DOTFILES_PLATFORM}.yaml"
     if [[ -f "$_policy_candidate" ]]; then
         DOTFILES_POLICY_FILE="$_policy_candidate"
     else
-        DOTFILES_POLICY_FILE="${DOTFILES_ROOT}/policies/default.yaml"
+        DOTFILES_POLICY_FILE="${DOTFILES_POLICIES_DIR}/default.yaml"
     fi
     export DOTFILES_POLICY_FILE
     unset _policy_candidate

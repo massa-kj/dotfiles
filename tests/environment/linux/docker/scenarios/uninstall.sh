@@ -5,7 +5,9 @@ ROOT="/dotfiles"
 PROFILE_FULL="$ROOT/tests/environment/linux/docker/fixtures/profile-full.yaml"
 PROFILE_PARTIAL="$ROOT/tests/environment/linux/docker/fixtures/profile-base.yaml"
 PROFILE_EMPTY="$ROOT/tests/environment/linux/docker/fixtures/profile-empty.yaml"
-STATE_FILE="$ROOT/state/state.json"
+export XDG_CONFIG_HOME="/tmp/dotfiles-xdg-config"
+export XDG_STATE_HOME="/tmp/dotfiles-xdg-state"
+STATE_FILE="$XDG_STATE_HOME/dotfiles/state.json"
 
 echo "==> Uninstall scenario"
 
@@ -29,8 +31,8 @@ if [[ "$INSTALLED_COUNT" -eq 0 ]]; then
 fi
 
 echo "==> Collecting tracked files and packages"
-TRACKED_FILES=$(jq -r '.features[]?.files[]?' "$STATE_FILE" || true)
-TRACKED_PACKAGES=$(jq -r '.features[]?.packages[]?' "$STATE_FILE" || true)
+TRACKED_FILES=$(jq -r '.features[]?.resources[]? | select(.kind == "fs") | .fs.path' "$STATE_FILE" || true)
+TRACKED_PACKAGES=$(jq -r '.features[]?.resources[]? | select(.kind == "package") | .package.name' "$STATE_FILE" || true)
 
 echo "==> Creating sentinel file (must NOT be removed)"
 SENTINEL="/tmp/dotfiles_sentinel"
@@ -43,11 +45,11 @@ echo "==> Running apply with partial profile"
 ./dotfiles apply "$PROFILE_PARTIAL"
 
 echo "==> Verifying bash and git remain"
-if ! jq -e '.features.bash' "$STATE_FILE" > /dev/null; then
+if ! jq -e '.features["core/bash"]' "$STATE_FILE" > /dev/null; then
   echo "bash was removed (should remain)"
   exit 1
 fi
-if ! jq -e '.features.git' "$STATE_FILE" > /dev/null; then
+if ! jq -e '.features["core/git"]' "$STATE_FILE" > /dev/null; then
   echo "git was removed (should remain)"
   exit 1
 fi
@@ -55,18 +57,18 @@ fi
 echo "==> Verifying other features removed"
 REMAINING_FEATURES=$(jq -r '.features | keys[]' "$STATE_FILE")
 for feature in $REMAINING_FEATURES; do
-  if [[ "$feature" != "bash" ]] && [[ "$feature" != "git" ]]; then
+  if [[ "$feature" != "core/bash" ]] && [[ "$feature" != "core/git" ]]; then
     echo "Unexpected feature remains: $feature"
     exit 1
   fi
 done
 
 echo "==> Verifying packages were removed"
-REMAINING_PACKAGES=$(jq -r '.features[]?.packages[]?' "$STATE_FILE" || true)
+REMAINING_PACKAGES=$(jq -r '.features[]?.resources[]? | select(.kind == "package") | .package.name' "$STATE_FILE" || true)
 if [[ -n "$REMAINING_PACKAGES" ]]; then
   for pkg in $TRACKED_PACKAGES; do
     if echo "$REMAINING_PACKAGES" | grep -q "^${pkg}$"; then
-      # Package still exists but should only be in bash/git
+      # Package may still exist if managed by remaining features.
       :
     fi
   done
@@ -105,7 +107,7 @@ if [[ ! -f "$SENTINEL" ]]; then
 fi
 
 echo "==> Verifying all packages removed from state"
-REMAINING_PACKAGES=$(jq -r '.features[]?.packages[]?' "$STATE_FILE" || true)
+REMAINING_PACKAGES=$(jq -r '.features[]?.resources[]? | select(.kind == "package") | .package.name' "$STATE_FILE" || true)
 if [[ -n "$REMAINING_PACKAGES" ]]; then
   echo "Packages still in state: $REMAINING_PACKAGES"
   exit 1

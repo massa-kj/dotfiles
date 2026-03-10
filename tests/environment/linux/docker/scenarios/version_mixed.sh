@@ -3,7 +3,9 @@ set -euo pipefail
 
 ROOT="/dotfiles"
 PROFILE_MIXED="$ROOT/tests/environment/linux/docker/fixtures/profile-version-mixed.yaml"
-STATE_FILE="$ROOT/state/state.json"
+export XDG_CONFIG_HOME="/tmp/dotfiles-xdg-config"
+export XDG_STATE_HOME="/tmp/dotfiles-xdg-state"
+STATE_FILE="$XDG_STATE_HOME/dotfiles/state.json"
 
 echo "==> Version mixed scenario"
 
@@ -22,23 +24,23 @@ echo "==> Validating JSON format"
 jq empty "$STATE_FILE" > /dev/null
 
 echo "==> Verifying node has version in state"
-NODE_VERSION=$(jq -r '.features.node.runtime.version' "$STATE_FILE")
+NODE_VERSION=$(jq -r '.features["core/node"].resources[] | select(.kind == "runtime") | .runtime.version' "$STATE_FILE")
 if [[ "$NODE_VERSION" != "20" ]]; then
   echo "Node version not recorded: $NODE_VERSION"
   exit 1
 fi
 
 echo "==> Verifying git has no version in state"
-GIT_VERSION=$(jq -r '.features.git.runtime.version // "none"' "$STATE_FILE")
-if [[ "$GIT_VERSION" != "none" ]]; then
-  echo "Git should not have version recorded: $GIT_VERSION"
+GIT_RUNTIME_COUNT=$(jq -r '[.features["core/git"].resources[]? | select(.kind == "runtime")] | length' "$STATE_FILE")
+if [[ "$GIT_RUNTIME_COUNT" != "0" ]]; then
+  echo "Git should not have runtime recorded"
   exit 1
 fi
 
 echo "==> Verifying bash has no version in state"
-BASH_VERSION=$(jq -r '.features.bash.runtime.version // "none"' "$STATE_FILE")
-if [[ "$BASH_VERSION" != "none" ]]; then
-  echo "Bash should not have version recorded: $BASH_VERSION"
+BASH_RUNTIME_COUNT=$(jq -r '[.features["core/bash"].resources[]? | select(.kind == "runtime")] | length' "$STATE_FILE")
+if [[ "$BASH_RUNTIME_COUNT" != "0" ]]; then
+  echo "Bash should not have runtime recorded"
   exit 1
 fi
 

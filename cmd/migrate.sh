@@ -105,7 +105,11 @@ _migrate_show_diff() {
 # Rewrite bare feature names in profiles/*.yaml to canonical IDs.
 # Requires yq (https://github.com/mikefarah/yq) to be installed.
 _migrate_profiles() {
-    local profiles_dir="$DOTFILES_ROOT/profiles"
+    local profiles_dir="${DOTFILES_PROFILES_DIR:-}"
+    if [[ -z "$profiles_dir" ]]; then
+        log_error "migrate --profiles: DOTFILES_PROFILES_DIR is not set"
+        return 1
+    fi
     if [[ ! -d "$profiles_dir" ]]; then
         log_warn "migrate: profiles directory not found: $profiles_dir (skipping)"
         return 0
@@ -150,13 +154,29 @@ _migrate_profiles() {
 
 log_task "Migrating dotfiles state"
 
-# 1. Read the state file directly (do NOT call state_load / state_init)
-if [[ -z "${DOTFILES_STATE_FILE:-}" ]]; then
-    log_error "migrate: DOTFILES_STATE_FILE is not set"
+# 1. Resolve state path directly (do NOT call state_load / state_init)
+if ! declare -F dotfiles_state_file_path >/dev/null 2>&1; then
+    log_error "migrate: dotfiles_state_file_path is not available"
     exit 1
 fi
 
-STATE_PATH="$DOTFILES_STATE_FILE"
+STATE_PATH="$(dotfiles_state_file_path)"
+LEGACY_STATE_PATH="$DOTFILES_ROOT/state/state.json"
+
+state_dir="$(dirname "$STATE_PATH")"
+mkdir -p "$state_dir"
+
+# Legacy state physical move (copy + backup, keep original file).
+if [[ ! -f "$STATE_PATH" && -f "$LEGACY_STATE_PATH" ]]; then
+    timestamp="$(date +%Y%m%d_%H%M%S)"
+    legacy_backup="${LEGACY_STATE_PATH}.bak.${timestamp}"
+
+    cp "$LEGACY_STATE_PATH" "$legacy_backup"
+    cp "$LEGACY_STATE_PATH" "$STATE_PATH"
+
+    log_info "Legacy state copied: $LEGACY_STATE_PATH -> $STATE_PATH"
+    log_info "Legacy backup created: $legacy_backup"
+fi
 
 if [[ ! -f "$STATE_PATH" ]]; then
     log_info "No state file found at $STATE_PATH — nothing to migrate."

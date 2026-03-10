@@ -3,7 +3,9 @@ set -euo pipefail
 
 ROOT="/dotfiles"
 PROFILE_VERSION="$ROOT/tests/environment/linux/docker/fixtures/profile-version-v20.yaml"
-STATE_FILE="$ROOT/state/state.json"
+export XDG_CONFIG_HOME="/tmp/dotfiles-xdg-config"
+export XDG_STATE_HOME="/tmp/dotfiles-xdg-state"
+STATE_FILE="$XDG_STATE_HOME/dotfiles/state.json"
 
 echo "==> Version install scenario"
 
@@ -26,20 +28,20 @@ echo "==> Validating JSON format"
 jq empty "$STATE_FILE" > /dev/null
 
 echo "==> Verifying node is installed"
-if ! jq -e '.features.node' "$STATE_FILE" > /dev/null; then
+if ! jq -e '.features["core/node"]' "$STATE_FILE" > /dev/null; then
   echo "node feature not found in state"
   exit 1
 fi
 
 echo "==> Verifying node version recorded in state"
-NODE_VERSION=$(jq -r '.features.node.runtime.version' "$STATE_FILE")
+NODE_VERSION=$(jq -r '.features["core/node"].resources[] | select(.kind == "runtime") | .runtime.version' "$STATE_FILE")
 if [[ "$NODE_VERSION" != "20" ]]; then
   echo "Node version not recorded correctly: $NODE_VERSION"
   exit 1
 fi
 
 echo "==> Verifying node package registered in state"
-NODE_PACKAGE=$(jq -r '.features.node.packages[] | select(startswith("node@"))' "$STATE_FILE")
+NODE_PACKAGE=$(jq -r '.features["core/node"].resources[] | select(.kind == "package" and (.package.name | startswith("node@"))) | .package.name' "$STATE_FILE")
 echo "  Registered package: $NODE_PACKAGE"
 if [[ ! "$NODE_PACKAGE" =~ ^node@20 ]]; then
   echo "Node package not registered correctly: $NODE_PACKAGE"
