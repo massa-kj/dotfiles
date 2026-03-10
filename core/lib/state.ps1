@@ -2,7 +2,7 @@
 # Module: state
 #
 # Responsibility:
-#   Manage state file (v2) with atomic writes, migration, and patch operations.
+#   Manage state file (v3) with atomic writes, migration, and patch operations.
 #
 # Stable Public API:
 #   State-Load
@@ -14,24 +14,21 @@
 #   State-PatchAddResource <Feature> <ResourceObject>
 #   State-PatchRemoveFeature <Feature>
 #   State-PatchFinalize
-#   State-Migrate
+#   State-MigrateV2ToV3                              — called by cmd/migrate.ps1
 #
-# Compat API (updated Phase 4):
+# Compat API:
 #   State-Init                                        — keep (used by scripts)
 #   State-HasFeature <Feature>                        — keep
 #   State-ListFeatures                                — keep
-#   State-GetPackages <Feature>                       — DEPRECATED (Phase 4.5); no longer called by feature scripts
+#   State-GetPackages <Feature>                       — DEPRECATED (Phase 4.5)
 #   State-GetFiles <Feature>                          — keep
 #   State-HasFile <path>                              — keep
-#   State-AddPackage <Feature> <Package>              — DEPRECATED (Phase 4.5); executor manages packages via backends
+#   State-AddPackage <Feature> <Package>              — DEPRECATED (Phase 4.5)
 #   State-AddFile <Feature> <File>                    — keep (git gitconfig complex merge)
 #   State-GetRuntime <Feature> <Key>                  — keep (read-only)
 #   State-HasRuntime <Feature> <Key>                  — keep (read-only)
 #   State-RemoveFeature <Feature>                     — DEPRECATED; executor uses State-PatchRemoveFeature
 #   State-SetRuntime <Feature> <Key> <Value>          — DEPRECATED; executor writes runtime resources
-#
-# Phase 2 shim (remove in Phase 3):
-#   State-FeatureKeyFor <CanonicalId>                 — canonical ID → v2 bare-name key fallback
 # -----------------------------------------------------------------------------
 
 Set-StrictMode -Version Latest
@@ -85,7 +82,7 @@ function State-Load {
     }
 
     if (-not (Test-Path $path)) {
-        $script:StateData = [PSCustomObject]@{ version = 2; features = [PSCustomObject]@{} }
+        $script:StateData = [PSCustomObject]@{ version = 3; features = [PSCustomObject]@{} }
         _State-ToJson $script:StateData | Set-Content -Path $path -Encoding UTF8
         return $true
     }
@@ -100,18 +97,16 @@ function State-Load {
 
     $ver = $script:StateData.version
 
-    if ($ver -eq 1) {
-        Log-Info "State-Load: v1 state detected, migrating to v2..."
-        if (-not (State-Migrate)) {
-            Log-Error "State-Load: migration failed"
-            return $false
-        }
-    } elseif ($ver -ne 2) {
+    if ($ver -eq 3) {
+        return $true
+    } elseif ($ver -eq 1 -or $ver -eq 2) {
+        Log-Error "State-Load: state is at version ${ver}, which requires migration."
+        Log-Error "  Run: dotfiles migrate"
+        return $false
+    } else {
         Log-Error "State-Load: unknown state version: $ver"
         return $false
     }
-
-    return $true
 }
 
 # State-Validate [Mode] [StateObject]
@@ -131,9 +126,9 @@ function State-Validate {
         return $false
     }
 
-    # 1. version MUST be 2
-    if ($obj.version -ne 2) {
-        Log-Error "State-Validate: version MUST be 2, got: $($obj.version)"
+    # 1. version MUST be 3
+    if ($obj.version -ne 3) {
+        Log-Error "State-Validate: version MUST be 3, got: $($obj.version)"
         return $false
     }
 
@@ -330,9 +325,64 @@ function State-PatchFinalize {
 
 # ── Migration ─────────────────────────────────────────────────────────────────
 
+# _Invoke-TransformV2ToV3 <V2Object>
+# Pure transformation: convert v2 PSCustomObject (bare feature keys) to v3
+# (canonical IDs). All bare names are prefixed with "core/". Already-canonical
+# keys (containing "/") are unchanged.
+# Returns the v3 PSCustomObject.
+function _Invoke-TransformV2ToV3 {
+    param([Parameter(Mandatory=$true)] $V2Object)
+
+    $v3Features = [PSCustomObject]@{}
+
+    foreach ($prop in $V2Object.features.PSObject.Properties) {
+        $key   = $prop.Name
+        $value = $prop.Value
+        $newKey = if ($key -match '/') { $key } else { "core/$key" }
+        $v3Features | Add-Member -MemberType NoteProperty -Name $newKey -Value $value
+    }
+
+    return [PSCustomObject]@{ version = 3; features = $v3Features }
+}
+
+# State-MigrateV2ToV3
+# Migrate v2 state (bare feature keys) to v3 (canonical IDs).
+# Must be called after State-Load with v2 content in $script:StateData.
+# Performs: timestamped backup → transform → validate → atomic commit.
+# Called exclusively by cmd/migrate.ps1; NOT called automatically by State-Load.
+function State-MigrateV2ToV3 {
+    $path      = $global:DOTFILES_STATE_FILE
+    $timestamp = Get-Date -Format 'yyyyMMdd_HHmmss'
+    $backup    = "$path.bak.$timestamp"
+
+    if (Test-Path $path) {
+        try {
+            Copy-Item -Path $path -Destination $backup -Force
+            Log-Info "State-MigrateV2ToV3: backup created: $backup"
+        } catch {
+            Log-Error "State-MigrateV2ToV3: failed to create backup: $_"
+            return $false
+        }
+    }
+
+    $v3 = _Invoke-TransformV2ToV3 -V2Object $script:StateData
+    if ($null -eq $v3) {
+        Log-Error "State-MigrateV2ToV3: transformation failed; restore from: $backup"
+        return $false
+    }
+
+    if (-not (State-CommitAtomic -StateObject $v3)) {
+        Log-Error "State-MigrateV2ToV3: commit failed; restore from: $backup"
+        return $false
+    }
+
+    Log-Info "State-MigrateV2ToV3: migration to v3 complete"
+    return $true
+}
+
 # State-Migrate
 # Migrate the in-memory v1 state to v2: backup → transform → commit atomically.
-# Called automatically by State-Load; may also be called via `dotfiles migrate-state`.
+# Called by cmd/migrate.ps1 for v1 state, before chaining into State-MigrateV2ToV3.
 function State-Migrate {
     $path   = $global:DOTFILES_STATE_FILE
     $backup = "$path.bak"
@@ -458,27 +508,7 @@ function State-Init {
     return State-Load
 }
 
-# State-FeatureKeyFor <CanonicalId>
-# Resolve the state key for a feature, accounting for v2 bare-name keying.
-# Lookup order:
-#   1. Exact match (canonical or bare)
-#   2. Bare-name strip: "core/git" → "git" (v2 state uses bare names)
-#   3. Fall back to bare name as the key for new installs
-# TODO(Phase3): remove after state migrates to v3 canonical keys.
-function State-FeatureKeyFor {
-    param([Parameter(Mandatory=$true)] [string]$CanonicalId)
-    _State-EnsureLoaded
-
-    # 1. Exact match
-    if (State-HasFeature -Feature $CanonicalId) { return $CanonicalId }
-
-    # 2. Bare-name fallback for canonical IDs that contain a source prefix
-    $bare = if ($CanonicalId -match '/') { $CanonicalId -replace '^[^/]+/', '' } else { $CanonicalId }
-    if ($bare -ne $CanonicalId -and (State-HasFeature -Feature $bare)) { return $bare }
-
-    # 3. Not in state: return bare name as the key to use (for new installs)
-    return $bare
-}
+# State-FeatureKeyFor — REMOVED in Phase 3 (state v3 uses canonical IDs directly).
 
 # State-HasFeature <Feature>
 function State-HasFeature {

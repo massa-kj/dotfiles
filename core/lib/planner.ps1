@@ -93,16 +93,6 @@ function _Planner-StateUnknownKindsList {
 
 # ── Phase 1: Diff ─────────────────────────────────────────────────────────────
 
-# _Planner-GetCompatStateKey <Feature>
-# Resolve the state key for a canonical feature ID.
-# v2 state uses bare names ("git"), but the planner receives canonical IDs ("core/git").
-# Delegates to State-FeatureKeyFor for the fallback lookup.
-# TODO(Phase3): remove after state migrates to v3 canonical keys.
-function _Planner-GetCompatStateKey {
-    param([Parameter(Mandatory=$true)] [string]$Feature)
-    return State-FeatureKeyFor -CanonicalId $Feature
-}
-
 function _Planner-Diff {
     <#
     .SYNOPSIS Compare desired features (profile) against current state.
@@ -114,21 +104,19 @@ function _Planner-Diff {
 
     # Desired features in sorted dependency order
     foreach ($feature in $SortedFeatures) {
-        # Resolve v2 state key (bare name) for this canonical ID
-        $stateKey        = _Planner-GetCompatStateKey -Feature $feature
-        $inState         = State-HasFeature -Feature $stateKey
-        $versionDesired  = _Planner-ProfileVersion -ProfileData $ProfileData -Feature $feature
+        $inState          = State-HasFeature -Feature $feature
+        $versionDesired   = _Planner-ProfileVersion -ProfileData $ProfileData -Feature $feature
         $versionInstalled = $null
-        $hasBlocked   = $false
-        $blockedReason = $null
+        $hasBlocked       = $false
+        $blockedReason    = $null
 
         if ($inState) {
-            $rv = _Planner-StateRuntimeVersion -Feature $stateKey
+            $rv = _Planner-StateRuntimeVersion -Feature $feature
             if ($rv) { $versionInstalled = $rv }
 
-            if (_Planner-StateHasUnknownKind -Feature $stateKey) {
+            if (_Planner-StateHasUnknownKind -Feature $feature) {
                 $hasBlocked    = $true
-                $kinds         = _Planner-StateUnknownKindsList -Feature $stateKey
+                $kinds         = _Planner-StateUnknownKindsList -Feature $feature
                 $blockedReason = "unknown resource kind: $kinds"
             }
         }
@@ -147,11 +135,10 @@ function _Planner-Diff {
     # Installed features not in profile (candidates for destroy)
     $installedFeatures = @(State-ListFeatures)
     foreach ($installedFeat in $installedFeatures) {
-        # Check if this state key is covered by any sorted feature
+        # Skip features that are in the desired set (v3 state uses canonical IDs).
         $covered = $false
         foreach ($sf in $SortedFeatures) {
-            $sfKey = _Planner-GetCompatStateKey -Feature $sf
-            if ($installedFeat -eq $sfKey -or $installedFeat -eq $sf) {
+            if ($installedFeat -eq $sf) {
                 $covered = $true
                 break
             }

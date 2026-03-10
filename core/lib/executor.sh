@@ -147,7 +147,7 @@ _executor_get_files_json() {
 # Skips packages where backend_package_exists returns true.
 _executor_apply_packages() {
     local feature="$1"
-    local feat_name="${feature#*/}"  # v2 state compat: write under bare name key
+    local feat_name="${feature#*/}"  # strip source prefix for path lookups
     local meta_file="$2"
     local platform_meta_file="${3:-}"
 
@@ -190,7 +190,7 @@ _executor_apply_packages() {
             {kind: "package", id: ("pkg:" + $name), backend: $backend,
              package: {name: $name, version: null}}
         ')
-        state_patch_add_resource "$feat_name" "$resource" || return 1
+        state_patch_add_resource "$feature" "$resource" || return 1
     done
 }
 
@@ -202,7 +202,7 @@ _executor_apply_packages() {
 #   3. "latest" as fallback
 _executor_apply_runtimes() {
     local feature="$1"
-    local feat_name="${feature#*/}"  # v2 state compat: write under bare name key
+    local feat_name="${feature#*/}"  # strip source prefix for path lookups
     local meta_file="$2"
     local platform_meta_file="${3:-}"
     local config_version="${4:-}"
@@ -257,7 +257,7 @@ _executor_apply_runtimes() {
             {kind: "runtime", id: ("rt:" + $name + "@" + $ver), backend: $backend,
              runtime: {name: $name, version: $ver}}
         ')
-        state_patch_add_resource "$feat_name" "$resource" || return 1
+        state_patch_add_resource "$feature" "$resource" || return 1
     done
 }
 
@@ -266,7 +266,7 @@ _executor_apply_runtimes() {
 # Supports op: link (symlink with copy fallback) and op: copy.
 _executor_deploy_files() {
     local feature="$1"
-    local feat_name="${feature#*/}"  # strip source prefix for file path and state key
+    local feat_name="${feature#*/}"  # strip source prefix for file system paths
     local meta_file="$2"
     local platform_meta_file="${3:-}"
 
@@ -346,7 +346,7 @@ _executor_deploy_files() {
             {kind: "fs", id: ("fs:" + $path),
              fs: {path: $path, entry_type: $et, op: $op}}
         ')
-        state_patch_add_resource "$feat_name" "$resource" || return 1
+        state_patch_add_resource "$feature" "$resource" || return 1
     done
 }
 
@@ -359,12 +359,12 @@ _executor_deploy_files() {
 #   - Packages with managed:false in meta.yaml are NOT uninstalled
 _executor_remove_resources() {
     local feature="$1"
-    local feat_name="${feature#*/}"  # v2 state compat: look up under bare name key
+    local feat_name="${feature#*/}"  # strip source prefix for meta.yaml lookups
 
-    state_has_feature "$feat_name" || return 0
+    state_has_feature "$feature" || return 0
 
     local resources
-    resources=$(state_query_resources "$feat_name")
+    resources=$(state_query_resources "$feature")
     local rc
     rc=$(echo "$resources" | jq 'length')
     ((rc == 0)) && return 0
@@ -413,7 +413,7 @@ _executor_remove_resources() {
 
         local pkg_name
         pkg_name=$(echo "$res" | jq -r '.package.name')
-        _executor_pkg_managed "$feat_name" "$pkg_name" || {
+        _executor_pkg_managed "$feature" "$pkg_name" || {
             log_info "    skipping unmanaged package: $pkg_name"
             continue
         }
@@ -510,7 +510,7 @@ _executor_install() {
 #   3. state_patch_begin → state_patch_remove_feature → state_patch_finalize
 _executor_destroy() {
     local feature="$1"
-    local feat_name="${feature#*/}"  # strip source prefix for script path and state key
+    local feat_name="${feature#*/}"  # strip source prefix for script path
 
     log_info "Destroying: $feature"
 
@@ -526,9 +526,9 @@ _executor_destroy() {
         fi
     fi
 
-    # Remove feature entry from state (use bare name for v2 state compat)
+    # Remove feature entry from state
     state_patch_begin || return 1
-    state_patch_remove_feature "$feat_name" || return 1
+    state_patch_remove_feature "$feature" || return 1
     state_patch_finalize || return 1
 }
 
@@ -537,7 +537,7 @@ _executor_destroy() {
 _executor_replace() {
     local feature="$1"
     local config_version="${2:-}"
-    local feat_name="${feature#*/}"  # strip source prefix for script path and state key
+    local feat_name="${feature#*/}"  # strip source prefix for script path
 
     log_info "Replacing: $feature"
 
@@ -552,9 +552,9 @@ _executor_replace() {
         fi
     fi
 
-    # Remove state entry so install can start fresh (use bare name for v2 state compat)
+    # Remove state entry so install can start fresh
     state_patch_begin || return 1
-    state_patch_remove_feature "$feat_name" || return 1
+    state_patch_remove_feature "$feature" || return 1
     state_patch_finalize || return 1
 
     # Install phase (full meta.yaml + script)

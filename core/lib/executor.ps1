@@ -154,7 +154,7 @@ function _Executor-ApplyPackages {
         [string]$PlatformMetaFile = ""
     )
 
-    # Use bare name as state key for v2 compat
+    # Use bare name for file system path lookups only
     $featName = if ($Feature -match '/') { $Feature -replace '^[^/]+/', '' } else { $Feature }
     $allPkgs  = @()
     $allPkgs += _Executor-GetPkgsFromMeta -MetaFile $MetaFile
@@ -185,7 +185,7 @@ function _Executor-ApplyPackages {
             backend = $backend
             package = [PSCustomObject]@{ name = $pkg; version = $null }
         }
-        State-PatchAddResource -Feature $featName -ResourceObject $resource
+        State-PatchAddResource -Feature $Feature -ResourceObject $resource
     }
     return $true
 }
@@ -201,7 +201,7 @@ function _Executor-ApplyRuntimes {
         [string]$ConfigVersion    = ""
     )
 
-    # Use bare name as state key for v2 compat
+    # Use bare name for file system path lookups only
     $featName = if ($Feature -match '/') { $Feature -replace '^[^/]+/', '' } else { $Feature }
     $allRts = @()
     $allRts += _Executor-GetRuntimesJson -MetaFile $MetaFile
@@ -250,7 +250,7 @@ function _Executor-ApplyRuntimes {
             backend = $backend
             runtime = [PSCustomObject]@{ name = $rtName; version = $actualVersion }
         }
-        State-PatchAddResource -Feature $featName -ResourceObject $resource
+        State-PatchAddResource -Feature $Feature -ResourceObject $resource
     }
     return $true
 }
@@ -293,7 +293,7 @@ function _Executor-DeployFiles {
         [string]$PlatformMetaFile = ""
     )
 
-    # Use bare name as state key and for source path construction; v2 compat
+    # Use bare name for source path construction (scripts live under features/<bare_name>/)
     $featName = if ($Feature -match '/') { $Feature -replace '^[^/]+/', '' } else { $Feature }
     $allFiles  = @()
     $allFiles += _Executor-GetFilesJson -MetaFile $MetaFile
@@ -363,7 +363,7 @@ function _Executor-DeployFiles {
             id   = "fs:$target"
             fs   = [PSCustomObject]@{ path = $target; entry_type = $entryType; op = $actualOp }
         }
-        State-PatchAddResource -Feature $featName -ResourceObject $resource
+        State-PatchAddResource -Feature $Feature -ResourceObject $resource
     }
     return $true
 }
@@ -378,11 +378,9 @@ function _Executor-DeployFiles {
 function _Executor-RemoveResources {
     param([Parameter(Mandatory=$true)] [string]$Feature)
 
-    # Resolve the v2 state key (bare name) for this canonical feature ID
-    $stateKey = State-FeatureKeyFor -CanonicalId $Feature
-    if (-not (State-HasFeature -Feature $stateKey)) { return $true }
+    if (-not (State-HasFeature -Feature $Feature)) { return $true }
 
-    $resources = @(State-QueryResources -Feature $stateKey)
+    $resources = @(State-QueryResources -Feature $Feature)
     if ($resources.Count -eq 0) { return $true }
 
     # 1. Remove fs resources (files / dirs / symlinks / junctions)
@@ -542,8 +540,6 @@ function _Executor-Destroy {
 
     # Strip source prefix; scripts live under features/<bare_name>/
     $featName = if ($Feature -match '/') { $Feature -replace '^[^/]+/', '' } else { $Feature }
-    # Resolve v2 state key (bare name) for state mutations
-    $stateKey = State-FeatureKeyFor -CanonicalId $Feature
 
     if (-not (_Executor-RemoveResources -Feature $Feature)) { return $false }
 
@@ -556,7 +552,7 @@ function _Executor-Destroy {
     }
 
     State-PatchBegin
-    State-PatchRemoveFeature -Feature $stateKey
+    State-PatchRemoveFeature -Feature $Feature
     State-PatchFinalize | Out-Null
 
     return $true
@@ -574,8 +570,6 @@ function _Executor-Replace {
 
     # Strip source prefix; scripts live under features/<bare_name>/
     $featName = if ($Feature -match '/') { $Feature -replace '^[^/]+/', '' } else { $Feature }
-    # Resolve v2 state key (bare name) for state mutations
-    $stateKey = State-FeatureKeyFor -CanonicalId $Feature
 
     if (-not (_Executor-RemoveResources -Feature $Feature)) { return $false }
 
@@ -588,7 +582,7 @@ function _Executor-Replace {
     }
 
     State-PatchBegin
-    State-PatchRemoveFeature -Feature $stateKey
+    State-PatchRemoveFeature -Feature $Feature
     State-PatchFinalize | Out-Null
 
     return (_Executor-Install -Feature $Feature -ConfigVersion $ConfigVersion)

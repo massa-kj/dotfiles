@@ -3,7 +3,7 @@
 # Module: state
 #
 # Responsibility:
-#   Manage state file (v2) with atomic writes, migration, and patch operations.
+#   Manage state file (v3) with atomic writes, migration, and patch operations.
 #
 # Stable Public API:
 #   state_load
@@ -15,17 +15,16 @@
 #   state_patch_add_resource <feature> <resource_json>
 #   state_patch_remove_feature <feature>
 #   state_patch_finalize
-#   state_migrate
+#   state_migrate_v2_to_v3                    — called by cmd/migrate.sh
 #
-# Compat API (updated Phase 4):
+# Compat API:
 #   state_init                                — keep (used by scripts)
 #   state_has_feature <feature>               — keep
 #   state_list_features                       — keep
-#   state_feature_key_for <id>               — Phase 2 compat shim (canonical → state key)
-#   state_get_packages <feature>              — DEPRECATED (Phase 4.5); no longer called by feature scripts
+#   state_get_packages <feature>              — DEPRECATED (Phase 4.5)
 #   state_get_files <feature>                 — keep
 #   state_has_file <path>                     — keep
-#   state_add_package <feature> <package>     — DEPRECATED (Phase 4.5); executor manages packages via backends
+#   state_add_package <feature> <package>     — DEPRECATED (Phase 4.5)
 #   state_add_file <feature> <path>           — keep (git gitconfig complex merge)
 #   state_get_runtime <feature> <key>         — keep (read-only)
 #   state_has_runtime <feature> <key>         — keep (read-only)
@@ -72,9 +71,9 @@ state_load() {
         mkdir -p "$dir"
     fi
 
-    # Create empty v2 state if file does not exist
+    # Create empty v3 state if file does not exist
     if [[ ! -f "$path" ]]; then
-        _STATE_JSON='{"version":2,"features":{}}'
+        _STATE_JSON='{"version":3,"features":{}}'
         echo "$_STATE_JSON" > "$path"
         return 0
     fi
@@ -87,22 +86,19 @@ state_load() {
 
     _STATE_JSON="$(cat "$path")"
 
-    # Auto-migrate v1 → v2
     local ver
     ver=$(echo "$_STATE_JSON" | jq -r '.version // empty')
 
-    if [[ "$ver" == "1" ]]; then
-        log_info "state_load: v1 state detected, migrating to v2..."
-        if ! state_migrate; then
-            log_error "state_load: migration failed"
-            return 1
-        fi
-    elif [[ "$ver" != "2" ]]; then
+    if [[ "$ver" == "3" ]]; then
+        return 0
+    elif [[ "$ver" == "1" || "$ver" == "2" ]]; then
+        log_error "state_load: state is at version ${ver}, which requires migration."
+        log_error "  Run: dotfiles migrate"
+        return 1
+    else
         log_error "state_load: unknown state version: ${ver:-<missing>}"
         return 1
     fi
-
-    return 0
 }
 
 # state_validate <mode> [json]
@@ -125,11 +121,11 @@ state_validate() {
         return 1
     fi
 
-    # 2. version MUST be 2
+    # 2. version MUST be 3
     local ver
     ver=$(echo "$json" | jq -r '.version')
-    if [[ "$ver" != "2" ]]; then
-        log_error "state_validate: version MUST be 2, got: $ver"
+    if [[ "$ver" != "3" ]]; then
+        log_error "state_validate: version MUST be 3, got: $ver"
         return 1
     fi
 
@@ -361,9 +357,71 @@ state_patch_finalize() {
 
 # ── Migration ─────────────────────────────────────────────────────────────────
 
-# state_migrate
+# _state_transform_v2_to_v3 <v2_json>
+# Pure transformation: v2 JSON (bare feature keys) → v3 JSON (canonical IDs).
+# All bare names are prefixed with "core/". Already-canonical keys are unchanged.
+# Outputs v3 JSON to stdout.
+_state_transform_v2_to_v3() {
+    local v2_json="$1"
+    echo "$v2_json" | jq '
+        {
+            version: 3,
+            features: (
+                .features | to_entries | map(
+                    if (.key | contains("/")) then .
+                    else .key = "core/" + .key
+                    end
+                ) | from_entries
+            )
+        }
+    '
+}
+
+# state_migrate_v2_to_v3
+# Migrate v2 state (bare feature keys) to v3 (canonical IDs).
+# Must be called with _STATE_JSON populated with valid v2 state.
+# Performs: timestamped backup → transform → validate → atomic commit.
+# Called exclusively by cmd/migrate.sh; NOT called automatically by state_load.
+state_migrate_v2_to_v3() {
+    if [[ -z "${DOTFILES_STATE_FILE:-}" ]]; then
+        log_error "state_migrate_v2_to_v3: DOTFILES_STATE_FILE is not set"
+        return 1
+    fi
+
+    local path="$DOTFILES_STATE_FILE"
+    local timestamp
+    timestamp=$(date +%Y%m%d_%H%M%S)
+    local backup="${path}.bak.${timestamp}"
+
+    # Backup current file
+    if [[ -f "$path" ]]; then
+        cp "$path" "$backup" || {
+            log_error "state_migrate_v2_to_v3: failed to create backup at $backup"
+            return 1
+        }
+        log_info "state_migrate_v2_to_v3: backup created: $backup"
+    fi
+
+    # Transform
+    local v3_json
+    if ! v3_json=$(_state_transform_v2_to_v3 "$_STATE_JSON"); then
+        log_error "state_migrate_v2_to_v3: transformation failed; restore from: $backup"
+        return 1
+    fi
+
+    # Commit atomically (state_validate inside state_commit_atomic now checks v3)
+    if ! state_commit_atomic "$v3_json"; then
+        log_error "state_migrate_v2_to_v3: commit failed; restore from: $backup"
+        return 1
+    fi
+
+    log_info "state_migrate_v2_to_v3: migration to v3 complete"
+    return 0
+}
+
+# state_migrate (v1 → v2)
 # Migrate the in-memory v1 state to v2: backup → transform → commit atomically.
-# Called automatically by state_load; may also be called via `dotfiles migrate-state`.
+# Called by cmd/migrate.sh for v1 state, before chaining into state_migrate_v2_to_v3.
 state_migrate() {
     local path="$DOTFILES_STATE_FILE"
     local backup="${path}.bak"
@@ -393,8 +451,6 @@ state_migrate() {
     log_info "state_migrate: migration to v2 complete"
     return 0
 }
-
-# _migrate_v1_to_v2 <v1_json>
 # Pure transformation: convert v1 schema to v2 resources format.
 # Outputs v2 JSON to stdout.
 #
@@ -578,34 +634,7 @@ state_get_files() {
         2>/dev/null
 }
 
-# state_feature_key_for <canonical_or_bare_id>
-# Return the key used in state.json for the given feature identifier.
-# Tries exact match first (canonical ID), then bare name fallback (v2 state compat).
-# Returns empty string (exit 0) if not found in state.
-# Phase 2 compat shim — TODO(Phase 3): remove bare name fallback after migrate.
-state_feature_key_for() {
-    local id="$1"
-    if [[ -z "$id" ]]; then
-        return 0
-    fi
-    _state_ensure_loaded || return 1
-
-    # Exact match (works for both canonical IDs and bare names)
-    local found
-    found=$(echo "$_STATE_JSON" | jq -r --arg f "$id" 'if .features[$f] then $f else "" end')
-    if [[ -n "$found" ]]; then
-        echo "$found"
-        return 0
-    fi
-
-    # Bare name fallback: "core/git" -> try "git" (for v2 state with bare keys)
-    local bare="${id#*/}"
-    if [[ "$bare" != "$id" ]]; then
-        found=$(echo "$_STATE_JSON" | jq -r --arg f "$bare" 'if .features[$f] then $f else "" end')
-        [[ -n "$found" ]] && echo "$found"
-    fi
-    return 0
-}
+# state_feature_key_for — REMOVED in Phase 3 (state v3 uses canonical IDs directly).
 
 # state_has_file <path>
 # Return 0 if the path is tracked under any feature, 1 otherwise.
