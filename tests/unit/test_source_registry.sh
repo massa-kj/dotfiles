@@ -15,6 +15,18 @@ source "$(dirname "${BASH_SOURCE[0]}")/helpers.sh"
 
 source "$REPO_ROOT/core/lib/source_registry.sh"
 
+TMPDIR_SR="$(mktemp -d)"
+trap 'rm -rf "$TMPDIR_SR"' EXIT
+
+export DOTFILES_ROOT="$TMPDIR_SR/repo"
+export DOTFILES_CONFIG_HOME="$TMPDIR_SR/config/dotfiles"
+export DOTFILES_DATA_HOME="$TMPDIR_SR/data/dotfiles"
+export DOTFILES_SOURCES_FILE="$DOTFILES_CONFIG_HOME/sources.yaml"
+
+mkdir -p "$DOTFILES_ROOT/features" "$DOTFILES_ROOT/backends"
+mkdir -p "$DOTFILES_CONFIG_HOME/features" "$DOTFILES_CONFIG_HOME/backends"
+mkdir -p "$DOTFILES_DATA_HOME/sources"
+
 # ── canonical_id_normalize ────────────────────────────────────────────────────
 
 echo "canonical_id_normalize"
@@ -129,6 +141,102 @@ _assert_return0 "user is in reserved list" \
 _assert_return0 "official is in reserved list" \
     bash -c "source '$REPO_ROOT/core/lib/source_registry.sh' 2>/dev/null
              [[ \"\$CANONICAL_ID_RESERVED_SOURCES\" == *official* ]]"
+
+# ── source_registry_load / allow list ────────────────────────────────────────
+
+echo "source_registry_load"
+
+cat > "$DOTFILES_SOURCES_FILE" <<'EOF'
+sources:
+  - id: ext
+    type: git
+    url: https://example.invalid/ext.git
+    commit: abcdef
+    allow:
+      features:
+        - node
+      backends:
+        - brew
+  - id: allsrc
+    type: git
+    url: https://example.invalid/all.git
+    commit: 123456
+    allow: "*"
+EOF
+
+_assert_return0 \
+    "source_registry_load accepts valid sources.yaml" \
+    source_registry_load "$DOTFILES_SOURCES_FILE"
+
+_assert_eq \
+    "core feature dir is repo/features" \
+    "$DOTFILES_ROOT/features" \
+    "$(source_registry_get_feature_dir core)"
+
+_assert_eq \
+    "user feature dir is config/features" \
+    "$DOTFILES_CONFIG_HOME/features" \
+    "$(source_registry_get_feature_dir user)"
+
+_assert_eq \
+    "external feature dir is data/sources/<id>/features" \
+    "$DOTFILES_DATA_HOME/sources/ext/features" \
+    "$(source_registry_get_feature_dir ext)"
+
+_assert_return0 \
+    "core features are always allowed" \
+    source_registry_is_allowed core git
+
+_assert_return0 \
+    "user features are always allowed" \
+    source_registry_is_allowed user myfeat
+
+_assert_return0 \
+    "external allow-list permits configured feature" \
+    source_registry_is_allowed ext node
+
+_assert_return1 \
+    "external allow-list denies unspecified feature" \
+    source_registry_is_allowed ext python
+
+_assert_return0 \
+    "external allow * permits any feature" \
+    source_registry_is_allowed allsrc anything
+
+_assert_return0 \
+    "external backend allow-list permits configured backend" \
+    source_registry_is_backend_allowed ext brew
+
+_assert_return1 \
+    "external backend allow-list denies unspecified backend" \
+    source_registry_is_backend_allowed ext mise
+
+cat > "$DOTFILES_SOURCES_FILE" <<'EOF'
+sources:
+  - id: core
+    type: git
+    url: https://example.invalid/core.git
+    commit: abcdef
+    allow: "*"
+EOF
+
+_assert_return1 \
+    "reserved source ids may not be defined in sources.yaml" \
+    source_registry_load "$DOTFILES_SOURCES_FILE"
+
+rm -f "$DOTFILES_SOURCES_FILE"
+
+_assert_return0 \
+    "source_registry_load succeeds without sources.yaml" \
+    source_registry_load
+
+_assert_return0 \
+    "implicit core source works without sources.yaml" \
+    source_registry_is_allowed core git
+
+_assert_return0 \
+    "implicit user source works without sources.yaml" \
+    source_registry_is_allowed user myfeat
 
 # ── Summary ───────────────────────────────────────────────────────────────────
 

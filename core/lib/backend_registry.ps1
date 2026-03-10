@@ -17,6 +17,10 @@ $ErrorActionPreference = "Stop"
 
 # This library expects env.ps1 and logger.ps1 to be loaded by the caller.
 
+if (-not (Get-Command Canonical-Id-Normalize -ErrorAction SilentlyContinue)) {
+    . "$env:DOTFILES_ROOT\core\lib\source_registry.ps1"
+}
+
 # ── Private state ─────────────────────────────────────────────────────────────
 
 # Cached parsed policy object.
@@ -83,13 +87,13 @@ function Resolve-BackendFor {
             $policy.$Kind.PSObject.Properties['overrides'] -and
             $policy.$Kind.overrides.PSObject.Properties[$Name] -and
             $policy.$Kind.overrides.$Name.PSObject.Properties['backend']) {
-            return $policy.$Kind.overrides.$Name.backend
+            return (Canonical-Id-Normalize -Name $policy.$Kind.overrides.$Name.backend -DefaultSourceId "core")
         }
 
         # 2. Kind-level default
         if ($policy.PSObject.Properties[$Kind] -and
             $policy.$Kind.PSObject.Properties['default_backend']) {
-            return $policy.$Kind.default_backend
+            return (Canonical-Id-Normalize -Name $policy.$Kind.default_backend -DefaultSourceId "core")
         }
     }
 
@@ -104,15 +108,15 @@ function _Get-PlatformDefaultBackend {
     switch ($global:DOTFILES_PLATFORM) {
         { $_ -in @("linux", "wsl") } {
             switch ($Kind) {
-                "package" { return "brew" }
-                "runtime" { return "mise" }
+                "package" { return "core/brew" }
+                "runtime" { return "core/mise" }
                 default { throw "Unsupported kind: $Kind" }
             }
         }
         "windows" {
             switch ($Kind) {
-                "package" { return "scoop" }
-                "runtime" { return "mise" }
+                "package" { return "core/scoop" }
+                "runtime" { return "core/mise" }
                 default { throw "Unsupported kind: $Kind" }
             }
         }
@@ -129,15 +133,22 @@ function _Get-PlatformDefaultBackend {
 function Load-Backend {
     param([Parameter(Mandatory=$true)] [string]$BackendId)
 
-    if (-not $global:DOTFILES_BACKENDS_DIR) {
-        Log-Error "Load-Backend: DOTFILES_BACKENDS_DIR is not set"
-        throw "DOTFILES_BACKENDS_DIR is not set"
+    $canonicalBackendId = Canonical-Id-Normalize -Name $BackendId -DefaultSourceId "core"
+    $parts = Canonical-Id-Parse $canonicalBackendId
+
+    if (-not (Source-Registry-Load)) {
+        throw "Failed to load source registry"
+    }
+    if (-not (Source-Registry-IsBackendAllowed -SourceId $parts.SourceId -BackendName $parts.Name)) {
+        Log-Error "Load-Backend: backend is not allowed by source registry: $canonicalBackendId"
+        throw "Backend is not allowed by source registry: $canonicalBackendId"
     }
 
     # Skip re-loading if same backend is already loaded
-    if ($script:BrLoadedBackend -eq $BackendId) { return }
+    if ($script:BrLoadedBackend -eq $canonicalBackendId) { return }
 
-    $pluginFile = Join-Path $global:DOTFILES_BACKENDS_DIR "$BackendId.ps1"
+    $backendDir = Source-Registry-GetBackendDir -SourceId $parts.SourceId
+    $pluginFile = Join-Path $backendDir "$($parts.Name).ps1"
     if (-not (Test-Path $pluginFile)) {
         Log-Error "Load-Backend: plugin not found: $pluginFile"
         throw "Backend plugin not found: $pluginFile"
@@ -152,8 +163,8 @@ function Load-Backend {
         throw "Backend Plugin Contract violation"
     }
 
-    $script:BrLoadedBackend = $BackendId
-    Log-Info "Load-Backend: loaded backend plugin: $BackendId (api_version=$(Backend-ApiVersion))"
+    $script:BrLoadedBackend = $canonicalBackendId
+    Log-Info "Load-Backend: loaded backend plugin: $canonicalBackendId (api_version=$(Backend-ApiVersion))"
 }
 
 # ── Dispatch ──────────────────────────────────────────────────────────────────

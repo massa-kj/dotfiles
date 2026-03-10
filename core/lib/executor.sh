@@ -45,15 +45,33 @@
 # This library expects env.sh, logger.sh, state.sh, backend_registry.sh to be
 # sourced by the caller (orchestrator).
 
+if [[ "$(type -t source_registry_get_feature_dir)" != "function" ]]; then
+    # shellcheck source=core/lib/source_registry.sh
+    source "${DOTFILES_ROOT}/core/lib/source_registry.sh"
+fi
+
 # ── Meta helpers ──────────────────────────────────────────────────────────────
+
+# _executor_feature_dir <feature>
+# Resolve the concrete feature directory from the source registry.
+_executor_feature_dir() {
+    local feature="$1"
+    local source_id feat_name
+    canonical_id_parse "$feature" source_id feat_name || return 1
+
+    local feature_root
+    feature_root=$(source_registry_get_feature_dir "$source_id") || return 1
+    echo "${feature_root}/${feat_name}"
+}
 
 # _executor_resolve_meta_file <feature>
 # Print the base meta.yaml path for a feature. Fails if not found.
 # <feature> may be a canonical ID ("core/git") or bare name; both are handled.
 _executor_resolve_meta_file() {
     local feature="$1"
-    local feat_name="${feature#*/}"  # strip source prefix: "core/git" -> "git"
-    local meta="$DOTFILES_FEATURES_DIR/$feat_name/meta.yaml"
+    local feature_dir
+    feature_dir=$(_executor_feature_dir "$feature") || return 1
+    local meta="$feature_dir/meta.yaml"
     if [[ ! -f "$meta" ]]; then
         log_error "_executor_resolve_meta_file: meta.yaml not found for: $feature"
         return 1
@@ -67,8 +85,8 @@ _executor_resolve_meta_file() {
 #           meta.<platform>.yaml (for others).
 _executor_resolve_platform_meta_file() {
     local feature="$1"
-    local feat_name="${feature#*/}"  # strip source prefix: "core/git" -> "git"
-    local dir="$DOTFILES_FEATURES_DIR/$feat_name"
+    local dir
+    dir=$(_executor_feature_dir "$feature") || return 1
 
     if [[ "$DOTFILES_PLATFORM" == "wsl" ]]; then
         if [[ -f "$dir/meta.wsl.yaml" ]]; then echo "$dir/meta.wsl.yaml"; return; fi
@@ -147,7 +165,6 @@ _executor_get_files_json() {
 # Skips packages where backend_package_exists returns true.
 _executor_apply_packages() {
     local feature="$1"
-    local feat_name="${feature#*/}"  # strip source prefix for path lookups
     local meta_file="$2"
     local platform_meta_file="${3:-}"
 
@@ -202,7 +219,6 @@ _executor_apply_packages() {
 #   3. "latest" as fallback
 _executor_apply_runtimes() {
     local feature="$1"
-    local feat_name="${feature#*/}"  # strip source prefix for path lookups
     local meta_file="$2"
     local platform_meta_file="${3:-}"
     local config_version="${4:-}"
@@ -266,7 +282,8 @@ _executor_apply_runtimes() {
 # Supports op: link (symlink with copy fallback) and op: copy.
 _executor_deploy_files() {
     local feature="$1"
-    local feat_name="${feature#*/}"  # strip source prefix for file system paths
+    local feature_dir
+    feature_dir=$(_executor_feature_dir "$feature") || return 1
     local meta_file="$2"
     local platform_meta_file="${3:-}"
 
@@ -288,7 +305,7 @@ _executor_deploy_files() {
         # Expand ~ in target path
         target=$(echo "$entry" | jq -r '.target' | sed "s|^~|$HOME|")
 
-        local src="$DOTFILES_FEATURES_DIR/$feat_name/files/$src_rel"
+        local src="$feature_dir/files/$src_rel"
         if [[ ! -e "$src" ]]; then
             log_error "executor: file source not found: $src"
             return 1
@@ -359,7 +376,6 @@ _executor_deploy_files() {
 #   - Packages with managed:false in meta.yaml are NOT uninstalled
 _executor_remove_resources() {
     local feature="$1"
-    local feat_name="${feature#*/}"  # strip source prefix for meta.yaml lookups
 
     state_has_feature "$feature" || return 0
 
@@ -461,7 +477,8 @@ _executor_run_script() {
 _executor_install() {
     local feature="$1"
     local config_version="${2:-}"
-    local feat_name="${feature#*/}"  # strip source prefix for script path
+    local feature_dir
+    feature_dir=$(_executor_feature_dir "$feature") || return 1
 
     log_info "Installing: $feature"
 
@@ -492,7 +509,7 @@ _executor_install() {
     state_patch_finalize || return 1
 
     # Run install.sh for remaining setup (npm/uv packages, bootstrap logic, etc.)
-    local script="$DOTFILES_FEATURES_DIR/$feat_name/install.sh"
+    local script="$feature_dir/install.sh"
     if [[ -f "$script" ]]; then
         local -a env_args=()
         [[ -n "$config_version" ]] && env_args+=("DOTFILES_FEATURE_CONFIG_VERSION=$config_version")
@@ -510,7 +527,8 @@ _executor_install() {
 #   3. state_patch_begin → state_patch_remove_feature → state_patch_finalize
 _executor_destroy() {
     local feature="$1"
-    local feat_name="${feature#*/}"  # strip source prefix for script path
+    local feature_dir
+    feature_dir=$(_executor_feature_dir "$feature") || return 1
 
     log_info "Destroying: $feature"
 
@@ -518,7 +536,7 @@ _executor_destroy() {
     _executor_remove_resources "$feature" || return 1
 
     # Run uninstall.sh for remaining cleanup (npm/uv uninstall etc.)
-    local script="$DOTFILES_FEATURES_DIR/$feat_name/uninstall.sh"
+    local script="$feature_dir/uninstall.sh"
     if [[ -f "$script" ]]; then
         if ! _executor_run_script "$script"; then
             log_error "executor: uninstall script failed for: $feature"
@@ -537,14 +555,15 @@ _executor_destroy() {
 _executor_replace() {
     local feature="$1"
     local config_version="${2:-}"
-    local feat_name="${feature#*/}"  # strip source prefix for script path
+    local feature_dir
+    feature_dir=$(_executor_feature_dir "$feature") || return 1
 
     log_info "Replacing: $feature"
 
     # Destroy phase (resources + script)
     _executor_remove_resources "$feature" || return 1
 
-    local uninstall_script="$DOTFILES_FEATURES_DIR/$feat_name/uninstall.sh"
+    local uninstall_script="$feature_dir/uninstall.sh"
     if [[ -f "$uninstall_script" ]]; then
         if ! _executor_run_script "$uninstall_script"; then
             log_error "executor: uninstall script failed during replace for: $feature"

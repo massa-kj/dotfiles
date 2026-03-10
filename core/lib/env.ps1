@@ -41,6 +41,13 @@ if (-not (Get-Variable -Scope Global -Name DOTFILES_PROFILES_DIR -ErrorAction Si
 	$global:DOTFILES_PROFILES_DIR = $env:DOTFILES_PROFILES_DIR
 }
 
+# Source registry file (override allowed)
+if (-not (Get-Variable -Scope Global -Name DOTFILES_SOURCES_FILE -ErrorAction SilentlyContinue) -and -not $env:DOTFILES_SOURCES_FILE) {
+	$global:DOTFILES_SOURCES_FILE = Join-Path $global:DOTFILES_CONFIG_HOME "sources.yaml"
+} elseif (-not (Get-Variable -Scope Global -Name DOTFILES_SOURCES_FILE -ErrorAction SilentlyContinue) -and $env:DOTFILES_SOURCES_FILE) {
+	$global:DOTFILES_SOURCES_FILE = $env:DOTFILES_SOURCES_FILE
+}
+
 # Backend plugins directory
 $global:DOTFILES_BACKENDS_DIR = Join-Path $DOTFILES_ROOT "backends"
 

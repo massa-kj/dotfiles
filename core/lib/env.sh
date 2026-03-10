@@ -55,6 +55,12 @@ if [[ -z "${DOTFILES_PROFILES_DIR:-}" ]]; then
 fi
 export DOTFILES_PROFILES_DIR
 
+# Source registry file (override allowed)
+if [[ -z "${DOTFILES_SOURCES_FILE:-}" ]]; then
+    DOTFILES_SOURCES_FILE="${DOTFILES_CONFIG_HOME}/sources.yaml"
+fi
+export DOTFILES_SOURCES_FILE
+
 # Backend plugins directory
 DOTFILES_BACKENDS_DIR="${DOTFILES_ROOT}/backends"
 export DOTFILES_BACKENDS_DIR

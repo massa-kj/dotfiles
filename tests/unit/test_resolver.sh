@@ -14,18 +14,50 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
 source "$(dirname "${BASH_SOURCE[0]}")/helpers.sh"
 
-export DOTFILES_ROOT="$REPO_ROOT"
+TMPDIR_ROOT="$(mktemp -d)"
+trap 'rm -rf "$TMPDIR_ROOT"' EXIT
+
+export DOTFILES_ROOT="$TMPDIR_ROOT/repo"
 export DOTFILES_PLATFORM="linux"
+export DOTFILES_CONFIG_HOME="$TMPDIR_ROOT/config/dotfiles"
+export DOTFILES_DATA_HOME="$TMPDIR_ROOT/data/dotfiles"
+export DOTFILES_SOURCES_FILE="$DOTFILES_CONFIG_HOME/sources.yaml"
+
+mkdir -p "$DOTFILES_ROOT/features" "$DOTFILES_ROOT/backends"
+mkdir -p "$DOTFILES_CONFIG_HOME/features" "$DOTFILES_CONFIG_HOME/backends"
+mkdir -p "$DOTFILES_DATA_HOME/sources"
 
 source "$REPO_ROOT/core/lib/source_registry.sh"
 source "$REPO_ROOT/core/lib/resolver.sh"
 
 # ── Setup: temp feature directory ────────────────────────────────────────────
 
-TMPDIR_FEATURES="$(mktemp -d)"
-trap 'rm -rf "$TMPDIR_FEATURES"' EXIT
+TMPDIR_FEATURES="$DOTFILES_ROOT/features"
+mkdir -p "$TMPDIR_FEATURES"
 
-export DOTFILES_FEATURES_DIR="$TMPDIR_FEATURES"
+cat > "$DOTFILES_SOURCES_FILE" <<'EOF'
+sources:
+    - id: ext
+        type: git
+        url: https://example.invalid/ext.git
+        commit: abcdef
+        allow:
+            features:
+                - extfeat
+            backends: "*"
+EOF
+
+mkdir -p "$DOTFILES_DATA_HOME/sources/ext/features/extfeat"
+cat > "$DOTFILES_DATA_HOME/sources/ext/features/extfeat/meta.yaml" <<'EOF'
+description: external feature
+depends: []
+EOF
+
+mkdir -p "$DOTFILES_CONFIG_HOME/features/myfeat"
+cat > "$DOTFILES_CONFIG_HOME/features/myfeat/meta.yaml" <<'EOF'
+description: user feature
+depends: []
+EOF
 
 # Create minimal meta.yaml files for test features.
 # alpha  – no deps
@@ -217,7 +249,8 @@ _assert_return1 \
 
 echo "resolve_dependencies: real repo features (integration smoke)"
 
-export DOTFILES_FEATURES_DIR="$REPO_ROOT/features"
+mkdir -p "$DOTFILES_ROOT/features"
+cp -R "$REPO_ROOT/features/." "$DOTFILES_ROOT/features/"
 
 declare -a real_features=("core/git" "core/bash")
 _RESOLVER_FEATURE_DEPS=()
@@ -247,6 +280,52 @@ for id in "${real_sorted[@]}"; do
 done
 echo "  PASS  no bare names in output (${#real_sorted[@]} features checked)"
 (( _PASS++ )) || true
+
+# ── Test: disallowed external dependency causes error ────────────────────────
+
+echo "read_feature_metadata: external allow-list enforcement"
+
+mkdir -p "$TMPDIR_FEATURES/extparent"
+cat > "$TMPDIR_FEATURES/extparent/meta.yaml" <<'EOF'
+description: depends on disallowed external feature
+depends:
+    - ext/blocked
+EOF
+
+declare -a ext_parent=("core/extparent")
+_RESOLVER_FEATURE_DEPS=()
+_RESOLVER_PROVIDES=()
+_RESOLVER_REQUIRES=()
+
+_assert_return1 \
+        "disallowed external dependency is rejected" \
+        read_feature_metadata ext_parent
+
+# ── Test: external and user sources resolve directories ──────────────────────
+
+echo "read_feature_metadata: external/user sources"
+
+declare -a multi_source_features=("ext/extfeat" "user/myfeat")
+_RESOLVER_FEATURE_DEPS=()
+_RESOLVER_PROVIDES=()
+_RESOLVER_REQUIRES=()
+
+read_feature_metadata multi_source_features 2>/dev/null || true
+
+declare -a multi_sorted
+_assert_return0 \
+    "allowed external and user features resolve successfully" \
+    resolve_dependencies multi_source_features multi_sorted
+
+_assert_contains \
+    "resolved output contains ext/extfeat" \
+    "ext/extfeat" \
+    "${multi_sorted[*]}"
+
+_assert_contains \
+    "resolved output contains user/myfeat" \
+    "user/myfeat" \
+    "${multi_sorted[*]}"
 
 # ── Summary ────────────────────────────────────────────────────────────────────
 

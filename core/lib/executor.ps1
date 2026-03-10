@@ -35,16 +35,27 @@ $ErrorActionPreference = "Stop"
 # This module expects env.ps1, logger.ps1, state.ps1, backend_registry.ps1 to be
 # dot-sourced by the caller (orchestrator).
 
+if (-not (Get-Command Source-Registry-GetFeatureDir -ErrorAction SilentlyContinue)) {
+    . "$env:DOTFILES_ROOT\core\lib\source_registry.ps1"
+}
+
 # ── Meta helpers ──────────────────────────────────────────────────────────────
+
+function _Executor-GetFeatureDir {
+    param([Parameter(Mandatory=$true)] [string]$Feature)
+
+    $parts = Canonical-Id-Parse $Feature
+    $featureRoot = Source-Registry-GetFeatureDir -SourceId $parts.SourceId
+    return Join-Path $featureRoot $parts.Name
+}
 
 # _Executor-ResolveMeta <Feature>
 # Return base meta.yaml path. Throws if not found.
 function _Executor-ResolveMeta {
     param([Parameter(Mandatory=$true)] [string]$Feature)
 
-    # Strip source prefix; feature files live under features/<bare_name>/
-    $featName = if ($Feature -match '/') { $Feature -replace '^[^/]+/', '' } else { $Feature }
-    $meta = Join-Path $env:DOTFILES_FEATURES_DIR "$featName\meta.yaml"
+    $featureDir = _Executor-GetFeatureDir -Feature $Feature
+    $meta = Join-Path $featureDir "meta.yaml"
     if (-not (Test-Path $meta)) {
         Log-Error "_Executor-ResolveMeta: meta.yaml not found for: $Feature"
         throw "meta.yaml not found: $meta"
@@ -57,9 +68,7 @@ function _Executor-ResolveMeta {
 function _Executor-ResolvePlatformMeta {
     param([Parameter(Mandatory=$true)] [string]$Feature)
 
-    # Strip source prefix; feature files live under features/<bare_name>/
-    $featName = if ($Feature -match '/') { $Feature -replace '^[^/]+/', '' } else { $Feature }
-    $dir = Join-Path $env:DOTFILES_FEATURES_DIR $featName
+    $dir = _Executor-GetFeatureDir -Feature $Feature
 
     switch ($global:DOTFILES_PLATFORM) {
         "windows" {
@@ -154,8 +163,6 @@ function _Executor-ApplyPackages {
         [string]$PlatformMetaFile = ""
     )
 
-    # Use bare name for file system path lookups only
-    $featName = if ($Feature -match '/') { $Feature -replace '^[^/]+/', '' } else { $Feature }
     $allPkgs  = @()
     $allPkgs += _Executor-GetPkgsFromMeta -MetaFile $MetaFile
     $allPkgs += _Executor-GetPkgsFromMeta -MetaFile $PlatformMetaFile
@@ -201,8 +208,6 @@ function _Executor-ApplyRuntimes {
         [string]$ConfigVersion    = ""
     )
 
-    # Use bare name for file system path lookups only
-    $featName = if ($Feature -match '/') { $Feature -replace '^[^/]+/', '' } else { $Feature }
     $allRts = @()
     $allRts += _Executor-GetRuntimesJson -MetaFile $MetaFile
     $allRts += _Executor-GetRuntimesJson -MetaFile $PlatformMetaFile
@@ -293,8 +298,7 @@ function _Executor-DeployFiles {
         [string]$PlatformMetaFile = ""
     )
 
-    # Use bare name for source path construction (scripts live under features/<bare_name>/)
-    $featName = if ($Feature -match '/') { $Feature -replace '^[^/]+/', '' } else { $Feature }
+    $featureDir = _Executor-GetFeatureDir -Feature $Feature
     $allFiles  = @()
     $allFiles += _Executor-GetFilesJson -MetaFile $MetaFile
     $allFiles += _Executor-GetFilesJson -MetaFile $PlatformMetaFile
@@ -307,7 +311,7 @@ function _Executor-DeployFiles {
                       -not [string]::IsNullOrWhiteSpace($entry.op)) { $entry.op } else { "link" }
         $target = _Executor-ExpandPath -Path $entry.target
 
-        $src = Join-Path $env:DOTFILES_FEATURES_DIR "$featName\files\$srcRel"
+        $src = Join-Path $featureDir "files\$srcRel"
         if (-not (Test-Path $src)) {
             Log-Error "executor: file source not found: $src"
             return $false
@@ -487,8 +491,7 @@ function _Executor-Install {
 
     Log-Info "Installing: $Feature"
 
-    # Strip source prefix; scripts live under features/<bare_name>/
-    $featName = if ($Feature -match '/') { $Feature -replace '^[^/]+/', '' } else { $Feature }
+    $featureDir = _Executor-GetFeatureDir -Feature $Feature
     $metaFile     = _Executor-ResolveMeta -Feature $Feature
     $platformMeta = _Executor-ResolvePlatformMeta -Feature $Feature
     if ($null -eq $platformMeta) { $platformMeta = "" }
@@ -513,7 +516,7 @@ function _Executor-Install {
     State-PatchFinalize | Out-Null
 
     # Run install.ps1 for remaining setup (secondary packages, bootstrap logic, etc.)
-    $script = Join-Path $env:DOTFILES_FEATURES_DIR "$featName\install.ps1"
+    $script = Join-Path $featureDir "install.ps1"
     if (Test-Path $script) {
         $envVars = @{}
         if (-not [string]::IsNullOrWhiteSpace($ConfigVersion)) {
@@ -538,12 +541,11 @@ function _Executor-Destroy {
 
     Log-Info "Destroying: $Feature"
 
-    # Strip source prefix; scripts live under features/<bare_name>/
-    $featName = if ($Feature -match '/') { $Feature -replace '^[^/]+/', '' } else { $Feature }
+    $featureDir = _Executor-GetFeatureDir -Feature $Feature
 
     if (-not (_Executor-RemoveResources -Feature $Feature)) { return $false }
 
-    $script = Join-Path $env:DOTFILES_FEATURES_DIR "$featName\uninstall.ps1"
+    $script = Join-Path $featureDir "uninstall.ps1"
     if (Test-Path $script) {
         if (-not (_Executor-RunScript -ScriptPath $script)) {
             Log-Error "executor: uninstall script failed for: $Feature"
@@ -568,12 +570,11 @@ function _Executor-Replace {
 
     Log-Info "Replacing: $Feature"
 
-    # Strip source prefix; scripts live under features/<bare_name>/
-    $featName = if ($Feature -match '/') { $Feature -replace '^[^/]+/', '' } else { $Feature }
+    $featureDir = _Executor-GetFeatureDir -Feature $Feature
 
     if (-not (_Executor-RemoveResources -Feature $Feature)) { return $false }
 
-    $uninstallScript = Join-Path $env:DOTFILES_FEATURES_DIR "$featName\uninstall.ps1"
+    $uninstallScript = Join-Path $featureDir "uninstall.ps1"
     if (Test-Path $uninstallScript) {
         if (-not (_Executor-RunScript -ScriptPath $uninstallScript)) {
             Log-Error "executor: uninstall script failed during replace for: $Feature"

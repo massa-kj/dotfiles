@@ -15,6 +15,11 @@
 
 # This library expects core/lib/env.sh and core/lib/logger.sh to be sourced by the caller.
 
+if [[ "$(type -t canonical_id_normalize)" != "function" ]]; then
+    # shellcheck source=core/lib/source_registry.sh
+    source "${DOTFILES_ROOT}/core/lib/source_registry.sh"
+fi
+
 # ── Private state ─────────────────────────────────────────────────────────────
 
 # Cached raw content of the loaded policy file.
@@ -82,14 +87,14 @@ resolve_backend_for() {
                 backend_id=$(echo "$_BR_POLICY_DATA" | \
                     yq eval ".${kind}.overrides.\"${name}\".backend" - 2>/dev/null)
                 if [[ -n "$backend_id" && "$backend_id" != "null" ]]; then
-                    echo "$backend_id"
+                    canonical_id_normalize "$backend_id" "core"
                     return 0
                 fi
                 # 2. Kind-level default
                 backend_id=$(echo "$_BR_POLICY_DATA" | \
                     yq eval ".${kind}.default_backend" - 2>/dev/null)
                 if [[ -n "$backend_id" && "$backend_id" != "null" ]]; then
-                    echo "$backend_id"
+                    canonical_id_normalize "$backend_id" "core"
                     return 0
                 fi
                 ;;
@@ -112,8 +117,8 @@ _backend_registry_platform_default() {
     case "${DOTFILES_PLATFORM:-linux}" in
         linux|wsl)
             case "$kind" in
-                package) echo "brew" ;;
-                runtime) echo "mise" ;;
+                package) echo "core/brew" ;;
+                runtime) echo "core/mise" ;;
                 *)
                     log_error "_backend_registry_platform_default: unsupported kind: $kind"
                     return 1
@@ -122,8 +127,8 @@ _backend_registry_platform_default() {
             ;;
         windows)
             case "$kind" in
-                package) echo "scoop" ;;
-                runtime) echo "mise" ;;
+                package) echo "core/scoop" ;;
+                runtime) echo "core/mise" ;;
                 *)
                     log_error "_backend_registry_platform_default: unsupported kind: $kind"
                     return 1
@@ -151,17 +156,30 @@ load_backend() {
         return 1
     fi
 
-    if [[ -z "${DOTFILES_BACKENDS_DIR:-}" ]]; then
-        log_error "load_backend: DOTFILES_BACKENDS_DIR is not set"
+    local canonical_backend_id
+    canonical_backend_id=$(canonical_id_normalize "$backend_id" "core") || {
+        log_error "load_backend: invalid backend id: $backend_id"
+        return 1
+    }
+
+    local source_id backend_name
+    canonical_id_parse "$canonical_backend_id" source_id backend_name || return 1
+    source_registry_load || return 1
+
+    if ! source_registry_is_backend_allowed "$source_id" "$backend_name"; then
+        log_error "load_backend: backend is not allowed by source registry: $canonical_backend_id"
         return 1
     fi
 
     # Skip re-sourcing if the same backend is already loaded
-    if [[ "$_BR_LOADED_BACKEND" == "$backend_id" ]]; then
+    if [[ "$_BR_LOADED_BACKEND" == "$canonical_backend_id" ]]; then
         return 0
     fi
 
-    local plugin_file="${DOTFILES_BACKENDS_DIR}/${backend_id}.sh"
+    local backend_dir
+    backend_dir=$(source_registry_get_backend_dir "$source_id") || return 1
+
+    local plugin_file="${backend_dir}/${backend_name}.sh"
     if [[ ! -f "$plugin_file" ]]; then
         log_error "load_backend: plugin not found: $plugin_file"
         return 1
@@ -177,8 +195,8 @@ load_backend() {
         return 1
     fi
 
-    _BR_LOADED_BACKEND="$backend_id"
-    log_info "load_backend: loaded backend plugin: $backend_id (api_version=$(backend_api_version))"
+    _BR_LOADED_BACKEND="$canonical_backend_id"
+    log_info "load_backend: loaded backend plugin: $canonical_backend_id (api_version=$(backend_api_version))"
     return 0
 }
 

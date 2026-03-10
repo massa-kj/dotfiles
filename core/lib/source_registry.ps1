@@ -17,6 +17,11 @@
 #   Canonical-Id-Normalize <Name> <DefaultSourceId>
 #   Canonical-Id-Parse     <CanonicalId>
 #   Canonical-Id-Validate  <CanonicalId>
+#   Source-Registry-Load [SourcesFile]
+#   Source-Registry-GetFeatureDir <SourceId>
+#   Source-Registry-GetBackendDir <SourceId>
+#   Source-Registry-IsAllowed <SourceId> <FeatureName>
+#   Source-Registry-IsBackendAllowed <SourceId> <BackendName>
 # -----------------------------------------------------------------------------
 
 Set-StrictMode -Version Latest
@@ -26,6 +31,14 @@ $ErrorActionPreference = "Stop"
 
 # List of source IDs that cannot be defined by the user in sources.yaml.
 $script:CanonicalIdReservedSources = @("core", "user", "official")
+$script:SourceRegistryLoaded = $false
+$script:SourceRegistrySourceTypes = @{}
+$script:SourceRegistryFeatureDirs = @{}
+$script:SourceRegistryBackendDirs = @{}
+$script:SourceRegistryAllowFeaturesMode = @{}
+$script:SourceRegistryAllowBackendsMode = @{}
+$script:SourceRegistryAllowFeaturesList = @{}
+$script:SourceRegistryAllowBackendsList = @{}
 
 # Canonical-Id-Normalize <Name> <DefaultSourceId>
 #
@@ -124,4 +137,171 @@ function Canonical-Id-Validate {
     }
 
     return $true
+}
+
+function _Source-Registry-RegisterSource {
+    param(
+        [string]$SourceId,
+        [string]$SourceType,
+        [string]$FeatureDir,
+        [string]$BackendDir
+    )
+
+    $script:SourceRegistrySourceTypes[$SourceId] = $SourceType
+    $script:SourceRegistryFeatureDirs[$SourceId] = $FeatureDir
+    $script:SourceRegistryBackendDirs[$SourceId] = $BackendDir
+
+    if ($SourceId -in @("core", "user")) {
+        $script:SourceRegistryAllowFeaturesMode[$SourceId] = "all"
+        $script:SourceRegistryAllowBackendsMode[$SourceId] = "all"
+    } else {
+        $script:SourceRegistryAllowFeaturesMode[$SourceId] = "none"
+        $script:SourceRegistryAllowBackendsMode[$SourceId] = "none"
+    }
+    $script:SourceRegistryAllowFeaturesList[$SourceId] = @()
+    $script:SourceRegistryAllowBackendsList[$SourceId] = @()
+}
+
+function _Source-Registry-LoadImplicit {
+    _Source-Registry-RegisterSource -SourceId "core" -SourceType "implicit" -FeatureDir (Join-Path $global:DOTFILES_ROOT "features") -BackendDir (Join-Path $global:DOTFILES_ROOT "backends")
+    _Source-Registry-RegisterSource -SourceId "user" -SourceType "implicit" -FeatureDir (Join-Path $global:DOTFILES_CONFIG_HOME "features") -BackendDir (Join-Path $global:DOTFILES_CONFIG_HOME "backends")
+}
+
+function _Source-Registry-EnsureLoaded {
+    if (-not $script:SourceRegistryLoaded) {
+        Source-Registry-Load | Out-Null
+    }
+}
+
+function Source-Registry-Load {
+    param([string]$SourcesFile = "")
+
+    $file = if ($SourcesFile) { $SourcesFile } elseif ($global:DOTFILES_SOURCES_FILE) { $global:DOTFILES_SOURCES_FILE } else { $null }
+
+    $script:SourceRegistrySourceTypes = @{}
+    $script:SourceRegistryFeatureDirs = @{}
+    $script:SourceRegistryBackendDirs = @{}
+    $script:SourceRegistryAllowFeaturesMode = @{}
+    $script:SourceRegistryAllowBackendsMode = @{}
+    $script:SourceRegistryAllowFeaturesList = @{}
+    $script:SourceRegistryAllowBackendsList = @{}
+
+    _Source-Registry-LoadImplicit
+
+    if (-not $file -or -not (Test-Path $file)) {
+        $script:SourceRegistryLoaded = $true
+        return $true
+    }
+
+    try {
+        $json = & yq eval -o=json '.' $file 2>$null
+        if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($json)) {
+            throw "failed to parse sources file"
+        }
+        $data = $json | ConvertFrom-Json
+    } catch {
+        Log-Error "Source-Registry-Load: failed to parse sources file: $file"
+        return $false
+    }
+
+    foreach ($src in @($data.sources)) {
+        if ($null -eq $src -or [string]::IsNullOrWhiteSpace($src.id)) { continue }
+
+        if ($src.id -in $script:CanonicalIdReservedSources) {
+            Log-Error "Source-Registry-Load: reserved source id may not be defined in sources.yaml: $($src.id)"
+            return $false
+        }
+        if ($src.type -ne 'git') {
+            Log-Error "Source-Registry-Load: unsupported source type for '$($src.id)': $($src.type)"
+            return $false
+        }
+
+        _Source-Registry-RegisterSource -SourceId $src.id -SourceType $src.type -FeatureDir (Join-Path $global:DOTFILES_DATA_HOME "sources\$($src.id)\features") -BackendDir (Join-Path $global:DOTFILES_DATA_HOME "sources\$($src.id)\backends")
+
+        if ($src.PSObject.Properties['allow']) {
+            if ($src.allow -is [string] -and $src.allow -eq '*') {
+                $script:SourceRegistryAllowFeaturesMode[$src.id] = 'all'
+                $script:SourceRegistryAllowBackendsMode[$src.id] = 'all'
+            } else {
+                if ($src.allow.PSObject.Properties['features']) {
+                    if ($src.allow.features -is [string] -and $src.allow.features -eq '*') {
+                        $script:SourceRegistryAllowFeaturesMode[$src.id] = 'all'
+                    } else {
+                        $script:SourceRegistryAllowFeaturesMode[$src.id] = 'list'
+                        $script:SourceRegistryAllowFeaturesList[$src.id] = @($src.allow.features)
+                    }
+                }
+                if ($src.allow.PSObject.Properties['backends']) {
+                    if ($src.allow.backends -is [string] -and $src.allow.backends -eq '*') {
+                        $script:SourceRegistryAllowBackendsMode[$src.id] = 'all'
+                    } else {
+                        $script:SourceRegistryAllowBackendsMode[$src.id] = 'list'
+                        $script:SourceRegistryAllowBackendsList[$src.id] = @($src.allow.backends)
+                    }
+                }
+            }
+        }
+    }
+
+    $script:SourceRegistryLoaded = $true
+    return $true
+}
+
+function Source-Registry-GetFeatureDir {
+    param([string]$SourceId)
+    _Source-Registry-EnsureLoaded
+    if (-not $script:SourceRegistryFeatureDirs.ContainsKey($SourceId)) {
+        throw "Source-Registry-GetFeatureDir: unknown source id: $SourceId"
+    }
+    return $script:SourceRegistryFeatureDirs[$SourceId]
+}
+
+function Source-Registry-GetBackendDir {
+    param([string]$SourceId)
+    _Source-Registry-EnsureLoaded
+    if (-not $script:SourceRegistryBackendDirs.ContainsKey($SourceId)) {
+        throw "Source-Registry-GetBackendDir: unknown source id: $SourceId"
+    }
+    return $script:SourceRegistryBackendDirs[$SourceId]
+}
+
+function _Source-Registry-IsAllowedKind {
+    param(
+        [string]$SourceId,
+        [string]$Name,
+        [ValidateSet('feature','backend')] [string]$Kind
+    )
+
+    _Source-Registry-EnsureLoaded
+
+    if (-not $script:SourceRegistrySourceTypes.ContainsKey($SourceId)) {
+        return $false
+    }
+    if ($SourceId -in @('core', 'user')) {
+        return $true
+    }
+
+    if ($Kind -eq 'feature') {
+        $mode = $script:SourceRegistryAllowFeaturesMode[$SourceId]
+        $list = @($script:SourceRegistryAllowFeaturesList[$SourceId])
+    } else {
+        $mode = $script:SourceRegistryAllowBackendsMode[$SourceId]
+        $list = @($script:SourceRegistryAllowBackendsList[$SourceId])
+    }
+
+    switch ($mode) {
+        'all' { return $true }
+        'list' { return $Name -in $list }
+        default { return $false }
+    }
+}
+
+function Source-Registry-IsAllowed {
+    param([string]$SourceId, [string]$FeatureName)
+    return _Source-Registry-IsAllowedKind -SourceId $SourceId -Name $FeatureName -Kind feature
+}
+
+function Source-Registry-IsBackendAllowed {
+    param([string]$SourceId, [string]$BackendName)
+    return _Source-Registry-IsAllowedKind -SourceId $SourceId -Name $BackendName -Kind backend
 }

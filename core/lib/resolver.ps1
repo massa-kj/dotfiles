@@ -21,6 +21,14 @@ if (-not (Get-Command Canonical-Id-Normalize -ErrorAction SilentlyContinue)) {
     . "$env:DOTFILES_ROOT\core\lib\source_registry.ps1"
 }
 
+function _Resolver-GetFeatureDir {
+    param([Parameter(Mandatory=$true)] [string]$Feature)
+
+    $parts = Canonical-Id-Parse $Feature
+    $featureRoot = Source-Registry-GetFeatureDir -SourceId $parts.SourceId
+    return Join-Path $featureRoot $parts.Name
+}
+
 # Global variables for dependency graph
 $script:FeatureDeps = @{}
 $script:Visited = @{}
@@ -44,23 +52,32 @@ function Read-FeatureMetadata {
     $script:Provides    = @{}
     $script:Requires    = @{}
 
+    if (-not (Source-Registry-Load)) {
+        return $false
+    }
+
     Log-Info "Reading feature metadata..."
 
     foreach ($feature in $Features) {
-        # Strip source prefix; feature files live under features/<bare_name>/
-        $featName = if ($feature -match '/') { $feature -replace '^[^/]+/', '' } else { $feature }
-        # Source ID is used as default source when normalizing dep bare names
-        $sourceId = if ($feature -match '/') { $feature -replace '/.*', '' } else { 'core' }
+        $parts = Canonical-Id-Parse $feature
+        $featName = $parts.Name
+        $sourceId = $parts.SourceId
 
-        $metaFile = Join-Path (Join-Path $global:DOTFILES_FEATURES_DIR $featName) "meta.yaml"
+        if (-not (Source-Registry-IsAllowed -SourceId $sourceId -FeatureName $featName)) {
+            Log-Error "Read-FeatureMetadata: feature is not allowed by source registry: $feature"
+            return $false
+        }
+
+        $featureDir = _Resolver-GetFeatureDir -Feature $feature
+        $metaFile = Join-Path $featureDir "meta.yaml"
 
         # Resolve platform-specific meta file
         $platformMetaFile = $null
-        $platformFile = Join-Path (Join-Path $global:DOTFILES_FEATURES_DIR $featName) "meta.$($global:DOTFILES_PLATFORM).yaml"
+        $platformFile = Join-Path $featureDir "meta.$($global:DOTFILES_PLATFORM).yaml"
         # WSL also falls back to meta.linux.yaml
-        $linuxFile = Join-Path (Join-Path $global:DOTFILES_FEATURES_DIR $featName) "meta.linux.yaml"
+        $linuxFile = Join-Path $featureDir "meta.linux.yaml"
         if ($global:DOTFILES_PLATFORM -eq "wsl") {
-            $wslFile = Join-Path (Join-Path $global:DOTFILES_FEATURES_DIR $featName) "meta.wsl.yaml"
+            $wslFile = Join-Path $featureDir "meta.wsl.yaml"
             if (Test-Path $wslFile)   { $platformMetaFile = $wslFile }
             elseif (Test-Path $linuxFile) { $platformMetaFile = $linuxFile }
         } elseif (Test-Path $platformFile) {
@@ -88,7 +105,14 @@ function Read-FeatureMetadata {
                 $deps += & $readYqList $platformMetaFile '.depends[]'
             }
             $uniqueDeps = @($deps | Select-Object -Unique | Where-Object { $_ } |
-                ForEach-Object { Canonical-Id-Normalize -Name $_ -DefaultSource $sourceId })
+                ForEach-Object {
+                    $canonicalDep = Canonical-Id-Normalize -Name $_ -DefaultSourceId $sourceId
+                    $depParts = Canonical-Id-Parse $canonicalDep
+                    if (-not (Source-Registry-IsAllowed -SourceId $depParts.SourceId -FeatureName $depParts.Name)) {
+                        throw "dependency is not allowed by source registry: $canonicalDep"
+                    }
+                    $canonicalDep
+                })
             $script:FeatureDeps[$feature] = $uniqueDeps
 
             # ── provides ──────────────────────────────────────────────────────

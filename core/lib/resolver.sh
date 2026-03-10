@@ -26,6 +26,11 @@ if [[ "$(type -t canonical_id_normalize)" != "function" ]]; then
     source "${DOTFILES_ROOT}/core/lib/source_registry.sh"
 fi
 
+if [[ "$(type -t source_registry_load)" != "function" ]]; then
+    # shellcheck source=core/lib/source_registry.sh
+    source "${DOTFILES_ROOT}/core/lib/source_registry.sh"
+fi
+
 # Global variables for dependency graph
 declare -g -A _RESOLVER_FEATURE_DEPS  # feature -> "dep1 dep2 ..."
 declare -g -A _RESOLVER_VISITED
@@ -36,27 +41,45 @@ declare -g -a _RESOLVER_SORTED
 declare -g -A _RESOLVER_PROVIDES  # capability -> "feature1 feature2 ..."
 declare -g -A _RESOLVER_REQUIRES  # feature -> "cap1 cap2 ..."
 
+# _resolver_feature_dir <feature>
+_resolver_feature_dir() {
+    local feature="$1"
+    local source_id name
+    canonical_id_parse "$feature" source_id name || return 1
+
+    local feature_dir_root
+    feature_dir_root=$(source_registry_get_feature_dir "$source_id") || return 1
+    echo "${feature_dir_root}/${name}"
+}
+
 # _resolver_platform_meta_file <feature>
 # Print the path to the platform-specific meta file, or empty string if none.
 # <feature> may be a canonical ID ("core/git") or a bare name; both are handled.
 _resolver_platform_meta_file() {
     local feature="$1"
-    local feat_name="${feature#*/}"  # "core/git" -> "git", "git" -> "git"
+    local feature_dir
+    feature_dir=$(_resolver_feature_dir "$feature") || return 1
     if [[ "$DOTFILES_PLATFORM" == "wsl" ]]; then
-        if [[ -f "$DOTFILES_FEATURES_DIR/$feat_name/meta.wsl.yaml" ]]; then
-            echo "$DOTFILES_FEATURES_DIR/$feat_name/meta.wsl.yaml"
-        elif [[ -f "$DOTFILES_FEATURES_DIR/$feat_name/meta.linux.yaml" ]]; then
-            echo "$DOTFILES_FEATURES_DIR/$feat_name/meta.linux.yaml"
+        if [[ -f "$feature_dir/meta.wsl.yaml" ]]; then
+            echo "$feature_dir/meta.wsl.yaml"
+            return 0
+        elif [[ -f "$feature_dir/meta.linux.yaml" ]]; then
+            echo "$feature_dir/meta.linux.yaml"
+            return 0
         fi
     elif [[ "$DOTFILES_PLATFORM" == "linux" ]]; then
-        if [[ -f "$DOTFILES_FEATURES_DIR/$feat_name/meta.linux.yaml" ]]; then
-            echo "$DOTFILES_FEATURES_DIR/$feat_name/meta.linux.yaml"
+        if [[ -f "$feature_dir/meta.linux.yaml" ]]; then
+            echo "$feature_dir/meta.linux.yaml"
+            return 0
         fi
     else
-        if [[ -f "$DOTFILES_FEATURES_DIR/$feat_name/meta.${DOTFILES_PLATFORM}.yaml" ]]; then
-            echo "$DOTFILES_FEATURES_DIR/$feat_name/meta.${DOTFILES_PLATFORM}.yaml"
+        if [[ -f "$feature_dir/meta.${DOTFILES_PLATFORM}.yaml" ]]; then
+            echo "$feature_dir/meta.${DOTFILES_PLATFORM}.yaml"
+            return 0
         fi
     fi
+    echo ""
+    return 0
 }
 
 # read_feature_metadata <features>
@@ -75,12 +98,24 @@ read_feature_metadata() {
     _RESOLVER_PROVIDES=()
     _RESOLVER_REQUIRES=()
 
+    source_registry_load || return 1
+
     log_info "Reading feature metadata..."
     for feature in "${features[@]}"; do
-        # Extract name part for file path: "core/git" -> "git"
-        local feat_name="${feature#*/}"
-        local source_id="${feature%%/*}"
-        local meta_file="$DOTFILES_FEATURES_DIR/$feat_name/meta.yaml"
+        local source_id feat_name
+        canonical_id_parse "$feature" source_id feat_name || {
+            log_error "read_feature_metadata: invalid feature id: $feature"
+            return 1
+        }
+
+        if ! source_registry_is_allowed "$source_id" "$feat_name"; then
+            log_error "read_feature_metadata: feature is not allowed by source registry: $feature"
+            return 1
+        fi
+
+        local feature_dir
+        feature_dir=$(_resolver_feature_dir "$feature") || return 1
+        local meta_file="$feature_dir/meta.yaml"
 
         if [[ ! -f "$meta_file" ]]; then
             log_error "Meta file not found: $meta_file (feature: $feature)"
@@ -111,12 +146,20 @@ read_feature_metadata() {
                 log_error "read_feature_metadata: invalid depends entry '$dep' in $feature"
                 return 1
             }
+
+            local dep_source dep_name
+            canonical_id_parse "$canonical_dep" dep_source dep_name || return 1
+            if ! source_registry_is_allowed "$dep_source" "$dep_name"; then
+                log_error "read_feature_metadata: dependency is not allowed by source registry: $canonical_dep (declared by $feature)"
+                return 1
+            fi
+
             canonical_deps+=("$canonical_dep")
         done
 
         # Deduplicate
         local unique_deps
-        mapfile -t unique_deps < <(printf '%s\n' "${canonical_deps[@]}" | sort -u | grep -v '^$')
+        mapfile -t unique_deps < <(printf '%s\n' "${canonical_deps[@]}" | sort -u | awk 'NF')
         _RESOLVER_FEATURE_DEPS["$feature"]="${unique_deps[*]}"
 
         # ── provides ────────────────────────────────────────────────────────
@@ -149,7 +192,7 @@ read_feature_metadata() {
         fi
 
         local unique_requires
-        mapfile -t unique_requires < <(printf '%s\n' "${requires[@]}" | sort -u | grep -v '^$')
+        mapfile -t unique_requires < <(printf '%s\n' "${requires[@]}" | sort -u | awk 'NF')
         _RESOLVER_REQUIRES["$feature"]="${unique_requires[*]}"
 
         # ── log ─────────────────────────────────────────────────────────────
@@ -166,6 +209,8 @@ read_feature_metadata() {
             log_info "  $feature has no dependencies"
         fi
     done
+
+    return 0
 }
 
 # _resolver_inject_capability_deps <desired_features_nameref>
