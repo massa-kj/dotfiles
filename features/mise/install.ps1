@@ -9,47 +9,17 @@ $DotfilesRoot = Split-Path -Parent (Split-Path -Parent $ScriptDir)
 
 . "$DotfilesRoot\core\lib\env.ps1"
 . "$DotfilesRoot\core\lib\logger.ps1"
-. "$DotfilesRoot\core\lib\state.ps1"
-. "$DotfilesRoot\core\lib\package.ps1"
 . "$DotfilesRoot\core\lib\runner.ps1"
 
 $FeatureName = "mise"
 
 Log-Task "Installing feature: $FeatureName"
 
-# Ensure state is initialized
-if (-not (State-Init)) {
-    exit 1
-}
-
-# Check if mise is already installed
+# Package installation is handled by executor (declared in meta.yaml).
 if (Test-Command "mise") {
-    Log-Info "mise is already installed"
+    Log-Info "mise is available"
 } else {
-    Log-Info "Installing mise package..."
-    if (-not (Install-Package -Name "mise")) {
-        Log-Error "Failed to install mise"
-        exit 1
-    }
-    Log-Success "mise package installed"
-}
-State-AddPackage -Feature $FeatureName -Package "mise"
-
-# Deploy configuration files if they exist
-$featureFilesDir = Join-Path $ScriptDir "files"
-$targetMiseDir = Join-Path $env:USERPROFILE ".config\mise"
-
-if (Test-Path $featureFilesDir) {
-    Log-Info "Deploying mise configuration..."
-    
-    # Deploy config.toml if exists
-    $configFile = Join-Path $featureFilesDir "config.toml"
-    if (Test-Path $configFile) {
-        $targetConfig = Join-Path $targetMiseDir "config.toml"
-        if (New-FileLink -Feature $FeatureName -Source $configFile -Destination $targetConfig) {
-            Log-Success "mise configuration deployed"
-        }
-    }
+    Log-Warn "mise not found in PATH; a shell reload may be required after installation"
 }
 
 Log-Success "Feature $FeatureName installed successfully"

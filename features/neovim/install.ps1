@@ -10,18 +10,11 @@ $DotfilesRoot = Split-Path -Parent (Split-Path -Parent $ScriptDir)
 . "$DotfilesRoot\core\lib\env.ps1"
 . "$DotfilesRoot\core\lib\logger.ps1"
 . "$DotfilesRoot\core\lib\state.ps1"
-. "$DotfilesRoot\core\lib\package.ps1"
 . "$DotfilesRoot\core\lib\fs.ps1"
-. "$DotfilesRoot\core\lib\runner.ps1"
 
 $FeatureName = "neovim"
 
 Log-Task "Installing feature: $FeatureName"
-
-# Ensure state is initialized
-if (-not (State-Init)) {
-    exit 1
-}
 
 # Read version from profile config (optional for neovim)
 $Version = if ($env:DOTFILES_FEATURE_CONFIG_VERSION) { 
@@ -33,26 +26,7 @@ if ($Version -ne "latest") {
     Log-Info "Target Neovim version: $Version"
 }
 
-# Check if neovim is already installed
-if (Test-Command "nvim") {
-    Log-Info "neovim is already installed"
-} else {
-    Log-Info "Installing neovim package..."
-    if (-not (Install-Package -Name "neovim")) {
-        Log-Error "Failed to install neovim"
-        exit 1
-    }
-    Log-Success "neovim package installed"
-}
-State-AddPackage -Feature $FeatureName -Package "neovim"
-
-# Record version in state if specified
-if ($Version -ne "latest") {
-    if (-not (State-SetRuntime -Feature $FeatureName -Key "version" -Value $Version)) {
-        Log-Error "Failed to record version in state"
-        exit 1
-    }
-}
+# Package installation is handled by executor (declared in meta.yaml).
 
 # Deploy configuration files
 $featureFilesDir = Join-Path $ScriptDir "files\nvim"

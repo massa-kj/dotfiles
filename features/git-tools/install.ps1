@@ -10,39 +10,13 @@ $DotfilesRoot = Split-Path -Parent (Split-Path -Parent $ScriptDir)
 . "$DotfilesRoot\core\lib\env.ps1"
 . "$DotfilesRoot\core\lib\logger.ps1"
 . "$DotfilesRoot\core\lib\state.ps1"
-. "$DotfilesRoot\core\lib\package.ps1"
 . "$DotfilesRoot\core\lib\fs.ps1"
-. "$DotfilesRoot\core\lib\runner.ps1"
 
 $FeatureName = "git-tools"
 
 Log-Task "Installing feature: $FeatureName"
 
-# Ensure state is initialized
-if (-not (State-Init)) {
-    exit 1
-}
-
-# List of tools to install
-$tools = @(
-    "delta",
-    "lazygit"
-)
-
-# Install each tool
-foreach ($tool in $tools) {
-    if (Test-Command $tool) {
-        Log-Info "$tool is already installed"
-    } else {
-        Log-Info "Installing $tool..."
-        if (-not (Install-Package -Name $tool)) {
-            Log-Error "Failed to install $tool"
-            exit 1
-        }
-        Log-Success "$tool installed"
-    }
-    State-AddPackage -Feature $FeatureName -Package $tool
-}
+# Packages are installed by executor (declared in meta.yaml).
 
 # Deploy lazygit configuration
 $featureFilesDir = Join-Path $ScriptDir "files"

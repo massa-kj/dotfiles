@@ -9,23 +9,15 @@ $DotfilesRoot = Split-Path -Parent (Split-Path -Parent $ScriptDir)
 
 . "$DotfilesRoot\core\lib\env.ps1"
 . "$DotfilesRoot\core\lib\logger.ps1"
-. "$DotfilesRoot\core\lib\state.ps1"
 . "$DotfilesRoot\core\lib\runner.ps1"
 
 $FeatureName = "scoop"
 
 Log-Task "Uninstalling feature: $FeatureName"
 
-# Check if feature is installed
-if (-not (State-HasFeature -Feature $FeatureName)) {
-    Log-Warn "Feature $FeatureName is not installed"
-    exit 0
-}
-
 # Check if Scoop is installed
 if (-not (Test-Command "scoop")) {
-    Log-Warn "Scoop command not found, removing from state only"
-    State-RemoveFeature -Feature $FeatureName
+    Log-Warn "Scoop command not found, skipping secondary cleanup"
     exit 0
 }
 
@@ -59,9 +51,6 @@ try {
     Log-Error "Failed to uninstall Scoop: $_"
     Log-Info "Manual cleanup may be required"
 }
-
-# Remove feature from state
-State-RemoveFeature -Feature $FeatureName
 
 Log-Success "Feature $FeatureName uninstalled successfully"
 Write-Host ""

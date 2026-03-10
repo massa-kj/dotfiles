@@ -16,9 +16,17 @@ $FeatureName = "scoop"
 
 Log-Task "Installing feature: $FeatureName"
 
-# Ensure state is initialized
-if (-not (State-Init)) {
-    exit 1
+function Register-ScoopState {
+    $resource = [PSCustomObject]@{
+        kind    = "package"
+        id      = "pkg:scoop"
+        backend = "unknown"
+        package = [PSCustomObject]@{ name = "scoop"; version = $null }
+    }
+
+    State-PatchBegin
+    State-PatchAddResource -Feature $FeatureName -ResourceObject $resource
+    State-PatchFinalize | Out-Null
 }
 
 # Check if Scoop is already installed (idempotency)
@@ -60,10 +68,7 @@ if (Test-Command "scoop") {
         }
     }
     
-    # Mark as installed in state
-    if (-not (State-HasFeature -Feature $FeatureName)) {
-        State-AddPackage -Feature $FeatureName -Package "scoop"
-    }
+    Register-ScoopState
     
     Log-Success "Feature $FeatureName is already configured"
     exit 0
@@ -123,7 +128,7 @@ foreach ($bucket in $bucketsToAdd) {
 }
 
 # Add to state
-State-AddPackage -Feature $FeatureName -Package "scoop"
+Register-ScoopState
 
 Log-Success "Feature $FeatureName installed successfully"
 Write-Host ""

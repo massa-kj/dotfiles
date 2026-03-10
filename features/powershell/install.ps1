@@ -16,11 +16,6 @@ $FeatureName = "powershell"
 
 Log-Task "Installing feature: $FeatureName"
 
-# Ensure state is initialized
-if (-not (State-Init)) {
-    exit 1
-}
-
 # Get PowerShell profile paths
 $profileDir = Split-Path -Parent $PROFILE
 $targetProfilePath = $PROFILE  # Microsoft.PowerShell_profile.ps1
@@ -68,8 +63,6 @@ if (Test-Path $targetProfilePath) {
 Log-Info "Deploying PowerShell profile..."
 try {
     New-FileLink -Feature $FeatureName -Source $sourceProfilePath -Destination $targetProfilePath
-    
-    State-AddFile -Feature $FeatureName -File $targetProfilePath
     Log-Success "PowerShell profile deployed: $targetProfilePath"
 } catch {
     Log-Error "Failed to copy profile: $_"

@@ -9,18 +9,11 @@ $DotfilesRoot = Split-Path -Parent (Split-Path -Parent $ScriptDir)
 
 . "$DotfilesRoot\core\lib\env.ps1"
 . "$DotfilesRoot\core\lib\logger.ps1"
-. "$DotfilesRoot\core\lib\state.ps1"
 . "$DotfilesRoot\core\lib\runner.ps1"
 
 $FeatureName = "caps2ctrl"
 
 Log-Task "Uninstalling feature: $FeatureName"
-
-# Check if feature is installed
-if (-not (State-HasFeature -Feature $FeatureName)) {
-    Log-Warn "Feature $FeatureName is not installed"
-    exit 0
-}
 
 # Check if running as Administrator
 if (-not (Test-Administrator)) {
@@ -50,9 +43,6 @@ try {
     Log-Error "Failed to remove registry value: $_"
     # Don't exit with error, continue to remove from state
 }
-
-# Remove feature from state
-State-RemoveFeature -Feature $FeatureName
 
 Log-Success "Feature $FeatureName uninstalled successfully"
 Write-Host ""

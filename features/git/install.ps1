@@ -10,7 +10,6 @@ $DotfilesRoot = Split-Path -Parent (Split-Path -Parent $ScriptDir)
 . "$DotfilesRoot\core\lib\env.ps1"
 . "$DotfilesRoot\core\lib\logger.ps1"
 . "$DotfilesRoot\core\lib\state.ps1"
-. "$DotfilesRoot\core\lib\package.ps1"
 . "$DotfilesRoot\core\lib\fs.ps1"
 . "$DotfilesRoot\core\lib\runner.ps1"
 
@@ -18,25 +17,11 @@ $FeatureName = "git"
 
 Log-Task "Installing feature: $FeatureName"
 
-# Ensure state is initialized
-if (-not (State-Init)) {
-    exit 1
-}
-
-# Check if git is already installed
+# Git package installation is handled by executor (declared in meta.yaml).
 if (Test-Command -Command "git") {
-    Log-Info "git is already installed"
+    Log-Info "git is available"
 } else {
-    Log-Info "Installing git package..."
-    
-    # Try to install via package manager
-    if (Install-Package -Name "git") {
-        State-AddPackage -Feature $FeatureName -Package "git"
-        Log-Success "git package installed"
-    } else {
-        Log-Error "Failed to install git"
-        exit 1
-    }
+    Log-Warn "git not found in PATH; executor should have installed it via meta.yaml packages"
 }
 
 # Deploy configuration files
