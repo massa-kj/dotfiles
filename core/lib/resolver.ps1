@@ -16,6 +16,11 @@ $ErrorActionPreference = "Stop"
 
 # This library expects env.ps1 and logger.ps1 to be loaded by the caller.
 
+# Lazily source source_registry if not already loaded
+if (-not (Get-Command Canonical-Id-Normalize -ErrorAction SilentlyContinue)) {
+    . "$env:DOTFILES_ROOT\core\lib\source_registry.ps1"
+}
+
 # Global variables for dependency graph
 $script:FeatureDeps = @{}
 $script:Visited = @{}
@@ -42,15 +47,20 @@ function Read-FeatureMetadata {
     Log-Info "Reading feature metadata..."
 
     foreach ($feature in $Features) {
-        $metaFile = Join-Path (Join-Path $global:DOTFILES_FEATURES_DIR $feature) "meta.yaml"
+        # Strip source prefix; feature files live under features/<bare_name>/
+        $featName = if ($feature -match '/') { $feature -replace '^[^/]+/', '' } else { $feature }
+        # Source ID is used as default source when normalizing dep bare names
+        $sourceId = if ($feature -match '/') { $feature -replace '/.*', '' } else { 'core' }
+
+        $metaFile = Join-Path (Join-Path $global:DOTFILES_FEATURES_DIR $featName) "meta.yaml"
 
         # Resolve platform-specific meta file
         $platformMetaFile = $null
-        $platformFile = Join-Path (Join-Path $global:DOTFILES_FEATURES_DIR $feature) "meta.$($global:DOTFILES_PLATFORM).yaml"
+        $platformFile = Join-Path (Join-Path $global:DOTFILES_FEATURES_DIR $featName) "meta.$($global:DOTFILES_PLATFORM).yaml"
         # WSL also falls back to meta.linux.yaml
-        $linuxFile = Join-Path (Join-Path $global:DOTFILES_FEATURES_DIR $feature) "meta.linux.yaml"
+        $linuxFile = Join-Path (Join-Path $global:DOTFILES_FEATURES_DIR $featName) "meta.linux.yaml"
         if ($global:DOTFILES_PLATFORM -eq "wsl") {
-            $wslFile = Join-Path (Join-Path $global:DOTFILES_FEATURES_DIR $feature) "meta.wsl.yaml"
+            $wslFile = Join-Path (Join-Path $global:DOTFILES_FEATURES_DIR $featName) "meta.wsl.yaml"
             if (Test-Path $wslFile)   { $platformMetaFile = $wslFile }
             elseif (Test-Path $linuxFile) { $platformMetaFile = $linuxFile }
         } elseif (Test-Path $platformFile) {
@@ -77,7 +87,8 @@ function Read-FeatureMetadata {
             if ($platformMetaFile) {
                 $deps += & $readYqList $platformMetaFile '.depends[]'
             }
-            $uniqueDeps = @($deps | Select-Object -Unique | Where-Object { $_ })
+            $uniqueDeps = @($deps | Select-Object -Unique | Where-Object { $_ } |
+                ForEach-Object { Canonical-Id-Normalize -Name $_ -DefaultSource $sourceId })
             $script:FeatureDeps[$feature] = $uniqueDeps
 
             # ── provides ──────────────────────────────────────────────────────
@@ -237,6 +248,6 @@ function Resolve-Dependencies {
         }
     }
 
-    Log-Success "Install order: $($script:Sorted -join ' ')"
+    Log-Success "Install order (canonical IDs): $($script:Sorted -join ' ')"
     return $script:Sorted
 }

@@ -49,9 +49,11 @@
 
 # _executor_resolve_meta_file <feature>
 # Print the base meta.yaml path for a feature. Fails if not found.
+# <feature> may be a canonical ID ("core/git") or bare name; both are handled.
 _executor_resolve_meta_file() {
     local feature="$1"
-    local meta="$DOTFILES_FEATURES_DIR/$feature/meta.yaml"
+    local feat_name="${feature#*/}"  # strip source prefix: "core/git" -> "git"
+    local meta="$DOTFILES_FEATURES_DIR/$feat_name/meta.yaml"
     if [[ ! -f "$meta" ]]; then
         log_error "_executor_resolve_meta_file: meta.yaml not found for: $feature"
         return 1
@@ -65,7 +67,8 @@ _executor_resolve_meta_file() {
 #           meta.<platform>.yaml (for others).
 _executor_resolve_platform_meta_file() {
     local feature="$1"
-    local dir="$DOTFILES_FEATURES_DIR/$feature"
+    local feat_name="${feature#*/}"  # strip source prefix: "core/git" -> "git"
+    local dir="$DOTFILES_FEATURES_DIR/$feat_name"
 
     if [[ "$DOTFILES_PLATFORM" == "wsl" ]]; then
         if [[ -f "$dir/meta.wsl.yaml" ]]; then echo "$dir/meta.wsl.yaml"; return; fi
@@ -144,6 +147,7 @@ _executor_get_files_json() {
 # Skips packages where backend_package_exists returns true.
 _executor_apply_packages() {
     local feature="$1"
+    local feat_name="${feature#*/}"  # v2 state compat: write under bare name key
     local meta_file="$2"
     local platform_meta_file="${3:-}"
 
@@ -186,7 +190,7 @@ _executor_apply_packages() {
             {kind: "package", id: ("pkg:" + $name), backend: $backend,
              package: {name: $name, version: null}}
         ')
-        state_patch_add_resource "$feature" "$resource" || return 1
+        state_patch_add_resource "$feat_name" "$resource" || return 1
     done
 }
 
@@ -198,6 +202,7 @@ _executor_apply_packages() {
 #   3. "latest" as fallback
 _executor_apply_runtimes() {
     local feature="$1"
+    local feat_name="${feature#*/}"  # v2 state compat: write under bare name key
     local meta_file="$2"
     local platform_meta_file="${3:-}"
     local config_version="${4:-}"
@@ -252,7 +257,7 @@ _executor_apply_runtimes() {
             {kind: "runtime", id: ("rt:" + $name + "@" + $ver), backend: $backend,
              runtime: {name: $name, version: $ver}}
         ')
-        state_patch_add_resource "$feature" "$resource" || return 1
+        state_patch_add_resource "$feat_name" "$resource" || return 1
     done
 }
 
@@ -261,6 +266,7 @@ _executor_apply_runtimes() {
 # Supports op: link (symlink with copy fallback) and op: copy.
 _executor_deploy_files() {
     local feature="$1"
+    local feat_name="${feature#*/}"  # strip source prefix for file path and state key
     local meta_file="$2"
     local platform_meta_file="${3:-}"
 
@@ -282,7 +288,7 @@ _executor_deploy_files() {
         # Expand ~ in target path
         target=$(echo "$entry" | jq -r '.target' | sed "s|^~|$HOME|")
 
-        local src="$DOTFILES_FEATURES_DIR/$feature/files/$src_rel"
+        local src="$DOTFILES_FEATURES_DIR/$feat_name/files/$src_rel"
         if [[ ! -e "$src" ]]; then
             log_error "executor: file source not found: $src"
             return 1
@@ -340,7 +346,7 @@ _executor_deploy_files() {
             {kind: "fs", id: ("fs:" + $path),
              fs: {path: $path, entry_type: $et, op: $op}}
         ')
-        state_patch_add_resource "$feature" "$resource" || return 1
+        state_patch_add_resource "$feat_name" "$resource" || return 1
     done
 }
 
@@ -353,11 +359,12 @@ _executor_deploy_files() {
 #   - Packages with managed:false in meta.yaml are NOT uninstalled
 _executor_remove_resources() {
     local feature="$1"
+    local feat_name="${feature#*/}"  # v2 state compat: look up under bare name key
 
-    state_has_feature "$feature" || return 0
+    state_has_feature "$feat_name" || return 0
 
     local resources
-    resources=$(state_query_resources "$feature")
+    resources=$(state_query_resources "$feat_name")
     local rc
     rc=$(echo "$resources" | jq 'length')
     ((rc == 0)) && return 0
@@ -406,7 +413,7 @@ _executor_remove_resources() {
 
         local pkg_name
         pkg_name=$(echo "$res" | jq -r '.package.name')
-        _executor_pkg_managed "$feature" "$pkg_name" || {
+        _executor_pkg_managed "$feat_name" "$pkg_name" || {
             log_info "    skipping unmanaged package: $pkg_name"
             continue
         }
@@ -454,6 +461,7 @@ _executor_run_script() {
 _executor_install() {
     local feature="$1"
     local config_version="${2:-}"
+    local feat_name="${feature#*/}"  # strip source prefix for script path
 
     log_info "Installing: $feature"
 
@@ -484,7 +492,7 @@ _executor_install() {
     state_patch_finalize || return 1
 
     # Run install.sh for remaining setup (npm/uv packages, bootstrap logic, etc.)
-    local script="$DOTFILES_FEATURES_DIR/$feature/install.sh"
+    local script="$DOTFILES_FEATURES_DIR/$feat_name/install.sh"
     if [[ -f "$script" ]]; then
         local -a env_args=()
         [[ -n "$config_version" ]] && env_args+=("DOTFILES_FEATURE_CONFIG_VERSION=$config_version")
@@ -502,6 +510,7 @@ _executor_install() {
 #   3. state_patch_begin → state_patch_remove_feature → state_patch_finalize
 _executor_destroy() {
     local feature="$1"
+    local feat_name="${feature#*/}"  # strip source prefix for script path and state key
 
     log_info "Destroying: $feature"
 
@@ -509,7 +518,7 @@ _executor_destroy() {
     _executor_remove_resources "$feature" || return 1
 
     # Run uninstall.sh for remaining cleanup (npm/uv uninstall etc.)
-    local script="$DOTFILES_FEATURES_DIR/$feature/uninstall.sh"
+    local script="$DOTFILES_FEATURES_DIR/$feat_name/uninstall.sh"
     if [[ -f "$script" ]]; then
         if ! _executor_run_script "$script"; then
             log_error "executor: uninstall script failed for: $feature"
@@ -517,9 +526,9 @@ _executor_destroy() {
         fi
     fi
 
-    # Remove feature entry from state
+    # Remove feature entry from state (use bare name for v2 state compat)
     state_patch_begin || return 1
-    state_patch_remove_feature "$feature" || return 1
+    state_patch_remove_feature "$feat_name" || return 1
     state_patch_finalize || return 1
 }
 
@@ -528,13 +537,14 @@ _executor_destroy() {
 _executor_replace() {
     local feature="$1"
     local config_version="${2:-}"
+    local feat_name="${feature#*/}"  # strip source prefix for script path and state key
 
     log_info "Replacing: $feature"
 
     # Destroy phase (resources + script)
     _executor_remove_resources "$feature" || return 1
 
-    local uninstall_script="$DOTFILES_FEATURES_DIR/$feature/uninstall.sh"
+    local uninstall_script="$DOTFILES_FEATURES_DIR/$feat_name/uninstall.sh"
     if [[ -f "$uninstall_script" ]]; then
         if ! _executor_run_script "$uninstall_script"; then
             log_error "executor: uninstall script failed during replace for: $feature"
@@ -542,9 +552,9 @@ _executor_replace() {
         fi
     fi
 
-    # Remove state entry so install can start fresh
+    # Remove state entry so install can start fresh (use bare name for v2 state compat)
     state_patch_begin || return 1
-    state_patch_remove_feature "$feature" || return 1
+    state_patch_remove_feature "$feat_name" || return 1
     state_patch_finalize || return 1
 
     # Install phase (full meta.yaml + script)

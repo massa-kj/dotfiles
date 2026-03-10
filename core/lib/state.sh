@@ -21,6 +21,7 @@
 #   state_init                                — keep (used by scripts)
 #   state_has_feature <feature>               — keep
 #   state_list_features                       — keep
+#   state_feature_key_for <id>               — Phase 2 compat shim (canonical → state key)
 #   state_get_packages <feature>              — DEPRECATED (Phase 4.5); no longer called by feature scripts
 #   state_get_files <feature>                 — keep
 #   state_has_file <path>                     — keep
@@ -575,6 +576,35 @@ state_get_files() {
         --arg f "$feature" \
         '.features[$f].resources // [] | .[] | select(.kind == "fs") | .fs.path' \
         2>/dev/null
+}
+
+# state_feature_key_for <canonical_or_bare_id>
+# Return the key used in state.json for the given feature identifier.
+# Tries exact match first (canonical ID), then bare name fallback (v2 state compat).
+# Returns empty string (exit 0) if not found in state.
+# Phase 2 compat shim — TODO(Phase 3): remove bare name fallback after migrate.
+state_feature_key_for() {
+    local id="$1"
+    if [[ -z "$id" ]]; then
+        return 0
+    fi
+    _state_ensure_loaded || return 1
+
+    # Exact match (works for both canonical IDs and bare names)
+    local found
+    found=$(echo "$_STATE_JSON" | jq -r --arg f "$id" 'if .features[$f] then $f else "" end')
+    if [[ -n "$found" ]]; then
+        echo "$found"
+        return 0
+    fi
+
+    # Bare name fallback: "core/git" -> try "git" (for v2 state with bare keys)
+    local bare="${id#*/}"
+    if [[ "$bare" != "$id" ]]; then
+        found=$(echo "$_STATE_JSON" | jq -r --arg f "$bare" 'if .features[$f] then $f else "" end')
+        [[ -n "$found" ]] && echo "$found"
+    fi
+    return 0
 }
 
 # state_has_file <path>

@@ -21,6 +21,12 @@
 
 # This library expects env.sh, logger.sh, and state.sh to be sourced by the caller.
 
+# Lazily source source_registry if not already loaded
+if [[ "$(type -t canonical_id_normalize)" != "function" ]]; then
+    # shellcheck source=core/lib/source_registry.sh
+    source "${DOTFILES_ROOT}/core/lib/source_registry.sh"
+fi
+
 # Lazily source resolver if not already loaded
 if [[ "$(type -t read_feature_metadata)" != "function" ]]; then
     # shellcheck source=core/lib/resolver.sh
@@ -66,9 +72,21 @@ read_profile() {
     # Cache full profile data for later config extraction
     _PROFILE_DATA=$(cat "$profile_file")
 
-    # Extract feature names (keys from features map)
+    # Extract feature names (keys from features map) and normalize to canonical IDs.
+    # Bare names (e.g. "git") are treated as "core/<name>" per the bare-name=core rule.
+    local -a raw_features
     # shellcheck disable=SC2207
-    output_array=($(yq eval '.features | keys | .[]' "$profile_file"))
+    raw_features=($(yq eval '.features | keys | .[]' "$profile_file"))
+
+    local canonical_id
+    output_array=()
+    for feat in "${raw_features[@]}"; do
+        canonical_id=$(canonical_id_normalize "$feat" "core") || {
+            log_error "read_profile: invalid feature name: $feat"
+            return 1
+        }
+        output_array+=("$canonical_id")
+    done
 
     if [[ ${#output_array[@]} -eq 0 ]]; then
         log_warn "Empty profile (no features specified)"
@@ -82,7 +100,8 @@ read_profile() {
 
 # extract_feature_config <feature>
 # Extract configuration for a specific feature from cached profile data.
-# Returns JSON string or empty if no config.
+# <feature> may be a canonical ID ("core/git") or a bare name ("git").
+# Returns JSON string or "null" if no config.
 extract_feature_config() {
     local feature="$1"
 
@@ -90,7 +109,22 @@ extract_feature_config() {
         return 0
     fi
 
-    echo "$_PROFILE_DATA" | yq eval ".features.${feature}" -o=json -
+    # Try canonical ID via bracket notation (handles "/" in key name)
+    local result
+    result=$(echo "$_PROFILE_DATA" | yq eval ".features[\"${feature}\"]" -o=json - 2>/dev/null)
+    if [[ -n "$result" ]] && [[ "$result" != "null" ]]; then
+        echo "$result"
+        return 0
+    fi
+
+    # Bare name fallback: profile may have been written with bare names (e.g. "git")
+    # while feature is canonical ("core/git"). Try the name part only.
+    local bare="${feature#*/}"
+    if [[ "$bare" != "$feature" ]]; then
+        result=$(echo "$_PROFILE_DATA" | yq eval ".features[\"${bare}\"]" -o=json - 2>/dev/null)
+    fi
+
+    echo "${result:-null}"
 }
 
 # ── Diff calculation ──────────────────────────────────────────────────────────

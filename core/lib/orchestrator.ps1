@@ -43,6 +43,11 @@ if (-not (Get-Command Invoke-ExecutorRun -ErrorAction SilentlyContinue)) {
     . "$env:DOTFILES_ROOT\core\lib\executor.ps1"
 }
 
+# Lazily source source_registry if not already loaded
+if (-not (Get-Command Canonical-Id-Normalize -ErrorAction SilentlyContinue)) {
+    . "$env:DOTFILES_ROOT\core\lib\source_registry.ps1"
+}
+
 # Module-scoped profile cache
 $script:ProfileData = ""
 
@@ -83,6 +88,9 @@ function Read-Profile {
             return @()
         }
 
+        # Normalize all bare names to canonical IDs ("git" -> "core/git")
+        $featureList = @($featureList | ForEach-Object { Canonical-Id-Normalize -Name $_ -DefaultSource "core" })
+
         Log-Info "Desired features: $($featureList -join ' ')"
         return $featureList
     } catch {
@@ -103,10 +111,21 @@ function Get-FeatureConfig {
         return $null
     }
 
+    # Strip source prefix for YAML key lookup (v2 profile uses bare names)
+    $featName = if ($Feature -match '/') { $Feature -replace '^[^/]+/', '' } else { $Feature }
+
     try {
-        $config = $script:ProfileData | & yq eval ".features.${Feature}" -o=json - 2>$null
-        if ($LASTEXITCODE -eq 0 -and $config) {
+        # Bracket notation handles names with slashes or special characters
+        $config = $script:ProfileData | & yq eval ".features[\"${featName}\"]" -o=json - 2>$null
+        if ($LASTEXITCODE -eq 0 -and $config -and $config -ne 'null') {
             return ($config | ConvertFrom-Json)
+        }
+        # Canonical ID fallback: try the full canonical key in case profile uses canonical IDs
+        if ($featName -ne $Feature) {
+            $config = $script:ProfileData | & yq eval ".features[\"${Feature}\"]" -o=json - 2>$null
+            if ($LASTEXITCODE -eq 0 -and $config -and $config -ne 'null') {
+                return ($config | ConvertFrom-Json)
+            }
         }
     } catch { }
 
@@ -193,8 +212,10 @@ function Invoke-Uninstall {
 
     # Process in reverse order
     for ($i = $Features.Count - 1; $i -ge 0; $i--) {
-        $feature        = $Features[$i]
-        $uninstallScript = Join-Path (Join-Path $env:DOTFILES_FEATURES_DIR $feature) "uninstall.ps1"
+        $feature         = $Features[$i]
+        # Strip source prefix; scripts live under features/<bare_name>/
+        $featName        = if ($feature -match '/') { $feature -replace '^[^/]+/', '' } else { $feature }
+        $uninstallScript = Join-Path (Join-Path $env:DOTFILES_FEATURES_DIR $featName) "uninstall.ps1"
 
         if (-not (Test-Path $uninstallScript)) {
             Log-Error "Uninstall script not found: $uninstallScript"
@@ -230,7 +251,9 @@ function Invoke-Install {
     Log-Task "Installing features..."
 
     foreach ($feature in $Features) {
-        $installScript = Join-Path (Join-Path $env:DOTFILES_FEATURES_DIR $feature) "install.ps1"
+        # Strip source prefix; scripts live under features/<bare_name>/
+        $featName       = if ($feature -match '/') { $feature -replace '^[^/]+/', '' } else { $feature }
+        $installScript  = Join-Path (Join-Path $env:DOTFILES_FEATURES_DIR $featName) "install.ps1"
 
         if (-not (Test-Path $installScript)) {
             Log-Error "Install script not found: $installScript"

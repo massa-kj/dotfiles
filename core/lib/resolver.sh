@@ -9,9 +9,22 @@
 # Public API (Stable):
 #   resolve_dependencies <desired_features> <output_array>
 #   read_feature_metadata <features>
+#
+# Input/output format (Phase 2+):
+#   All feature identifiers are canonical IDs of the form "<source_id>/<name>".
+#   Bare names in profile are normalized upstream (orchestrator.read_profile).
+#   Bare names in meta.yaml depends[] are normalized here using the feature's own
+#   source_id as the default (same-source dependency rule).
 # -----------------------------------------------------------------------------
 
-# This library expects core/env.sh and core/lib/logger.sh to be sourced by the caller.
+# This library expects core/env.sh, core/lib/logger.sh, and
+# core/lib/source_registry.sh to be sourced by the caller.
+
+# Lazily source source_registry if not already loaded
+if [[ "$(type -t canonical_id_normalize)" != "function" ]]; then
+    # shellcheck source=core/lib/source_registry.sh
+    source "${DOTFILES_ROOT}/core/lib/source_registry.sh"
+fi
 
 # Global variables for dependency graph
 declare -g -A _RESOLVER_FEATURE_DEPS  # feature -> "dep1 dep2 ..."
@@ -25,31 +38,36 @@ declare -g -A _RESOLVER_REQUIRES  # feature -> "cap1 cap2 ..."
 
 # _resolver_platform_meta_file <feature>
 # Print the path to the platform-specific meta file, or empty string if none.
+# <feature> may be a canonical ID ("core/git") or a bare name; both are handled.
 _resolver_platform_meta_file() {
     local feature="$1"
+    local feat_name="${feature#*/}"  # "core/git" -> "git", "git" -> "git"
     if [[ "$DOTFILES_PLATFORM" == "wsl" ]]; then
-        if [[ -f "$DOTFILES_FEATURES_DIR/$feature/meta.wsl.yaml" ]]; then
-            echo "$DOTFILES_FEATURES_DIR/$feature/meta.wsl.yaml"
-        elif [[ -f "$DOTFILES_FEATURES_DIR/$feature/meta.linux.yaml" ]]; then
-            echo "$DOTFILES_FEATURES_DIR/$feature/meta.linux.yaml"
+        if [[ -f "$DOTFILES_FEATURES_DIR/$feat_name/meta.wsl.yaml" ]]; then
+            echo "$DOTFILES_FEATURES_DIR/$feat_name/meta.wsl.yaml"
+        elif [[ -f "$DOTFILES_FEATURES_DIR/$feat_name/meta.linux.yaml" ]]; then
+            echo "$DOTFILES_FEATURES_DIR/$feat_name/meta.linux.yaml"
         fi
     elif [[ "$DOTFILES_PLATFORM" == "linux" ]]; then
-        if [[ -f "$DOTFILES_FEATURES_DIR/$feature/meta.linux.yaml" ]]; then
-            echo "$DOTFILES_FEATURES_DIR/$feature/meta.linux.yaml"
+        if [[ -f "$DOTFILES_FEATURES_DIR/$feat_name/meta.linux.yaml" ]]; then
+            echo "$DOTFILES_FEATURES_DIR/$feat_name/meta.linux.yaml"
         fi
     else
-        if [[ -f "$DOTFILES_FEATURES_DIR/$feature/meta.${DOTFILES_PLATFORM}.yaml" ]]; then
-            echo "$DOTFILES_FEATURES_DIR/$feature/meta.${DOTFILES_PLATFORM}.yaml"
+        if [[ -f "$DOTFILES_FEATURES_DIR/$feat_name/meta.${DOTFILES_PLATFORM}.yaml" ]]; then
+            echo "$DOTFILES_FEATURES_DIR/$feat_name/meta.${DOTFILES_PLATFORM}.yaml"
         fi
     fi
 }
 
 # read_feature_metadata <features>
 # Read dependency metadata from meta.yaml files for all features.
+# <features> must contain canonical IDs (e.g. "core/git", "user/myfeat").
+# Bare names in meta.yaml depends[] are normalized to same-source canonical IDs.
+#
 # Populates:
-#   _RESOLVER_FEATURE_DEPS  – explicit depends (merged with platform-specific)
-#   _RESOLVER_PROVIDES      – capability -> features that provide it
-#   _RESOLVER_REQUIRES      – feature -> required capabilities
+#   _RESOLVER_FEATURE_DEPS  – canonical depends per feature
+#   _RESOLVER_PROVIDES      – capability -> canonical features that provide it
+#   _RESOLVER_REQUIRES      – canonical feature -> required capabilities
 read_feature_metadata() {
     local -n features=$1
 
@@ -59,10 +77,13 @@ read_feature_metadata() {
 
     log_info "Reading feature metadata..."
     for feature in "${features[@]}"; do
-        local meta_file="$DOTFILES_FEATURES_DIR/$feature/meta.yaml"
+        # Extract name part for file path: "core/git" -> "git"
+        local feat_name="${feature#*/}"
+        local source_id="${feature%%/*}"
+        local meta_file="$DOTFILES_FEATURES_DIR/$feat_name/meta.yaml"
 
         if [[ ! -f "$meta_file" ]]; then
-            log_error "Meta file not found: $meta_file"
+            log_error "Meta file not found: $meta_file (feature: $feature)"
             return 1
         fi
 
@@ -70,17 +91,32 @@ read_feature_metadata() {
         platform_meta_file=$(_resolver_platform_meta_file "$feature")
 
         # ── depends ─────────────────────────────────────────────────────────
-        local deps
-        mapfile -t deps < <(yq eval '.depends[]' "$meta_file" 2>/dev/null || true)
+        local raw_deps
+        mapfile -t raw_deps < <(yq eval '.depends[]' "$meta_file" 2>/dev/null || true)
 
         if [[ -n "$platform_meta_file" ]]; then
             local platform_deps
             mapfile -t platform_deps < <(yq eval '.depends[]' "$platform_meta_file" 2>/dev/null || true)
-            deps+=("${platform_deps[@]}")
+            raw_deps+=("${platform_deps[@]}")
         fi
 
+        # Normalize each dep to a canonical ID using this feature's source_id as default.
+        # Bare dep names are treated as same-source ("core/mise" for a dep "mise" in "core/neovim").
+        # Explicit canonical IDs ("user/foo") are passed through unchanged.
+        local canonical_deps=()
+        local dep canonical_dep
+        for dep in "${raw_deps[@]}"; do
+            [[ -z "$dep" ]] && continue
+            canonical_dep=$(canonical_id_normalize "$dep" "$source_id") || {
+                log_error "read_feature_metadata: invalid depends entry '$dep' in $feature"
+                return 1
+            }
+            canonical_deps+=("$canonical_dep")
+        done
+
+        # Deduplicate
         local unique_deps
-        mapfile -t unique_deps < <(printf '%s\n' "${deps[@]}" | sort -u | grep -v '^$')
+        mapfile -t unique_deps < <(printf '%s\n' "${canonical_deps[@]}" | sort -u | grep -v '^$')
         _RESOLVER_FEATURE_DEPS["$feature"]="${unique_deps[*]}"
 
         # ── provides ────────────────────────────────────────────────────────
@@ -233,6 +269,6 @@ resolve_dependencies() {
     # Copy result to output array
     output_array=("${_RESOLVER_SORTED[@]}")
 
-    log_success "Install order: ${output_array[*]}"
+    log_success "Install order (canonical IDs): ${output_array[*]}"
     return 0
 }

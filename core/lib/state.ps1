@@ -29,6 +29,9 @@
 #   State-HasRuntime <Feature> <Key>                  — keep (read-only)
 #   State-RemoveFeature <Feature>                     — DEPRECATED; executor uses State-PatchRemoveFeature
 #   State-SetRuntime <Feature> <Key> <Value>          — DEPRECATED; executor writes runtime resources
+#
+# Phase 2 shim (remove in Phase 3):
+#   State-FeatureKeyFor <CanonicalId>                 — canonical ID → v2 bare-name key fallback
 # -----------------------------------------------------------------------------
 
 Set-StrictMode -Version Latest
@@ -453,6 +456,28 @@ function _Invoke-MigrateV1ToV2 {
 # Initialize or load state. Calls State-Load (which auto-migrates v1 if needed).
 function State-Init {
     return State-Load
+}
+
+# State-FeatureKeyFor <CanonicalId>
+# Resolve the state key for a feature, accounting for v2 bare-name keying.
+# Lookup order:
+#   1. Exact match (canonical or bare)
+#   2. Bare-name strip: "core/git" → "git" (v2 state uses bare names)
+#   3. Fall back to bare name as the key for new installs
+# TODO(Phase3): remove after state migrates to v3 canonical keys.
+function State-FeatureKeyFor {
+    param([Parameter(Mandatory=$true)] [string]$CanonicalId)
+    _State-EnsureLoaded
+
+    # 1. Exact match
+    if (State-HasFeature -Feature $CanonicalId) { return $CanonicalId }
+
+    # 2. Bare-name fallback for canonical IDs that contain a source prefix
+    $bare = if ($CanonicalId -match '/') { $CanonicalId -replace '^[^/]+/', '' } else { $CanonicalId }
+    if ($bare -ne $CanonicalId -and (State-HasFeature -Feature $bare)) { return $bare }
+
+    # 3. Not in state: return bare name as the key to use (for new installs)
+    return $bare
 }
 
 # State-HasFeature <Feature>

@@ -61,10 +61,29 @@ _planner_load_profile() {
 # _planner_profile_version <profile_data> <feature>
 # Extract .features.<feature>.version from profile YAML data.
 # Prints the version string, or empty if not specified.
+# Uses bracket notation to support canonical IDs containing "/".
+# Falls back to bare name lookup for profiles written before Phase 2 normalization.
 _planner_profile_version() {
     local profile_data="$1"
     local feature="$2"
-    echo "$profile_data" | yq eval ".features.${feature}.version // \"\"" - 2>/dev/null
+
+    # Bracket notation handles canonical IDs like "core/git" correctly.
+    local ver
+    ver=$(echo "$profile_data" | yq eval ".features[\"${feature}\"].version // \"\"" - 2>/dev/null)
+    if [[ -n "$ver" ]]; then
+        echo "$ver"
+        return 0
+    fi
+
+    # Bare name fallback: profile may declare "git: {version: ...}" while
+    # feature is now canonical "core/git". Try name part only.
+    local bare="${feature#*/}"
+    if [[ "$bare" != "$feature" ]]; then
+        echo "$profile_data" | yq eval ".features[\"${bare}\"].version // \"\"" - 2>/dev/null
+        return 0
+    fi
+
+    echo ""
 }
 
 # ── State helpers (read-only) ─────────────────────────────────────────────────
@@ -97,6 +116,33 @@ _planner_state_unknown_kinds_csv() {
         '.features[$f].resources // [] | map(select(.kind | IN("package","runtime","fs") | not)) | map(.kind) | unique | join(", ")'
 }
 
+# ── Phase 2 compat helpers ────────────────────────────────────────────────────
+
+# _planner_compat_state_key <canonical_id>
+# Return the key used in _STATE_JSON for the given canonical feature ID.
+# Tries exact match first (works for v3 state), then bare name (v2 state compat).
+# Returns empty string if not found.
+# TODO(Phase 3): remove bare name fallback after state migration to v3.
+_planner_compat_state_key() {
+    local id="$1"
+
+    # Exact match (v3 state canonical IDs or legacy callers with bare names)
+    local found
+    found=$(echo "$_STATE_JSON" | jq -r --arg f "$id" 'if .features[$f] then $f else "" end')
+    if [[ -n "$found" ]]; then
+        echo "$found"
+        return 0
+    fi
+
+    # Bare name fallback for v2 state (bare keys like "git", "bash")
+    local bare="${id#*/}"
+    if [[ "$bare" != "$id" ]]; then
+        found=$(echo "$_STATE_JSON" | jq -r --arg f "$bare" 'if .features[$f] then $f else "" end')
+        [[ -n "$found" ]] && echo "$found"
+    fi
+    return 0
+}
+
 # ── Phase 1: Diff ─────────────────────────────────────────────────────────────
 
 # _planner_diff <profile_data> <sorted_features_nameref>
@@ -121,9 +167,16 @@ _planner_diff() {
 
     # ── Desired features (in sorted dependency order) ──
     for feature in "${_diff_sorted[@]}"; do
+        # Resolve actual state key: canonical ID (v3) or bare name (v2 compat).
+        local state_key
+        state_key=$(_planner_compat_state_key "$feature")
+
         local in_state
-        in_state=$(echo "$_STATE_JSON" | jq -r --arg f "$feature" \
-            'if .features[$f] then "true" else "false" end')
+        if [[ -n "$state_key" ]]; then
+            in_state="true"
+        else
+            in_state="false"
+        fi
 
         local version_desired
         version_desired=$(_planner_profile_version "$profile_data" "$feature")
@@ -134,13 +187,13 @@ _planner_diff() {
 
         if [[ "$in_state" == "true" ]]; then
             local rv
-            rv=$(_planner_state_runtime_version "$feature")
+            rv=$(_planner_state_runtime_version "$state_key")
             [[ -n "$rv" ]] && version_installed="\"$rv\""
 
-            if _planner_state_has_unknown_kind "$feature"; then
+            if _planner_state_has_unknown_kind "$state_key"; then
                 has_blocked="true"
                 local kinds
-                kinds=$(_planner_state_unknown_kinds_csv "$feature")
+                kinds=$(_planner_state_unknown_kinds_csv "$state_key")
                 blocked_reason="\"unknown resource kind: $kinds\""
             fi
         fi
@@ -164,14 +217,24 @@ _planner_diff() {
     done
 
     # ── Installed features not in profile (candidates for destroy) ──
+    # State may use bare names (v2) or canonical IDs (v3); check both against
+    # the canonical IDs in _diff_sorted.
     local installed_features
     mapfile -t installed_features < <(echo "$_STATE_JSON" | jq -r '.features | keys[]')
 
     for feature in "${installed_features[@]}"; do
-        # Skip if already processed above
-        if [[ " ${_diff_sorted[*]} " =~ " ${feature} " ]]; then
-            continue
-        fi
+        # Check if this state key is covered by any desired canonical ID.
+        # Handles the v2 case where state key is "git" and desired is "core/git".
+        local covered=false
+        local desired
+        for desired in "${_diff_sorted[@]}"; do
+            local bare_desired="${desired#*/}"
+            if [[ "$desired" == "$feature" ]] || [[ "$bare_desired" == "$feature" ]]; then
+                covered=true
+                break
+            fi
+        done
+        [[ "$covered" == "true" ]] && continue
 
         diff_json=$(echo "$diff_json" | jq \
             --arg f "$feature" \
