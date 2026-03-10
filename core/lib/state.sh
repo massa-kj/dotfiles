@@ -21,15 +21,10 @@
 #   state_init                                — keep (used by scripts)
 #   state_has_feature <feature>               — keep
 #   state_list_features                       — keep
-#   state_get_packages <feature>              — DEPRECATED (Phase 4.5)
 #   state_get_files <feature>                 — keep
 #   state_has_file <path>                     — keep
-#   state_add_package <feature> <package>     — DEPRECATED (Phase 4.5)
 #   state_add_file <feature> <path>           — keep (git gitconfig complex merge)
 #   state_get_runtime <feature> <key>         — keep (read-only)
-#   state_has_runtime <feature> <key>         — keep (read-only)
-#   state_remove_feature <feature>            — DEPRECATED; executor uses state_patch_remove_feature
-#   state_set_runtime <feature> <key> <value> — DEPRECATED; executor writes runtime resources
 # -----------------------------------------------------------------------------
 
 # ── Private state ─────────────────────────────────────────────────────────────
@@ -60,6 +55,28 @@ _state_file_path() {
     log_error "_state_file_path: dotfiles_state_file_path is not available"
     return 1
 }
+
+    # _state_normalize_feature_id <feature>
+    # Normalize bare feature names to canonical IDs for compat APIs.
+    _state_normalize_feature_id() {
+        local feature="$1"
+
+        if [[ -z "$feature" ]]; then
+            log_error "_state_normalize_feature_id: feature name is required"
+            return 1
+        fi
+
+        if declare -F canonical_id_normalize >/dev/null 2>&1; then
+            canonical_id_normalize "$feature" "core"
+            return $?
+        fi
+
+        if [[ "$feature" == */* ]]; then
+            echo "$feature"
+        else
+            echo "core/$feature"
+        fi
+    }
 
 # ── Stable Core API ───────────────────────────────────────────────────────────
 
@@ -268,6 +285,7 @@ state_query_feature() {
         log_error "state_query_feature: feature name is required"
         return 1
     fi
+        feature=$(_state_normalize_feature_id "$feature") || return 1
     _state_ensure_loaded || return 1
     echo "$_STATE_JSON" | jq -c --arg f "$feature" '.features[$f] // empty'
 }
@@ -280,6 +298,7 @@ state_query_resources() {
         log_error "state_query_resources: feature name is required"
         return 1
     fi
+        feature=$(_state_normalize_feature_id "$feature") || return 1
     _state_ensure_loaded || return 1
     echo "$_STATE_JSON" | jq -c --arg f "$feature" '.features[$f].resources // []'
 }
@@ -304,6 +323,7 @@ state_patch_add_resource() {
         log_error "state_patch_add_resource: feature and resource_json are required"
         return 1
     fi
+        feature=$(_state_normalize_feature_id "$feature") || return 1
 
     if [[ -z "$_STATE_PATCH_JSON" ]]; then
         log_error "state_patch_add_resource: no patch in progress; call state_patch_begin first"
@@ -331,6 +351,7 @@ state_patch_remove_feature() {
         log_error "state_patch_remove_feature: feature name is required"
         return 1
     fi
+        feature=$(_state_normalize_feature_id "$feature") || return 1
 
     if [[ -z "$_STATE_PATCH_JSON" ]]; then
         log_error "state_patch_remove_feature: no patch in progress; call state_patch_begin first"
@@ -570,11 +591,8 @@ _migrate_v1_to_v2() {
 # Status after Phase 4.5:
 #   state_init, state_has_feature, state_list_features  → still used (keep)
 #   state_get_files, state_has_file                     → still used (keep)
-#   state_get_runtime, state_has_runtime                → kept for reads
+#   state_get_runtime                                   → kept for reads
 #   state_add_file                                      → used by scripts for fs resources
-#   state_get_packages                                  → DEPRECATED (Phase 4.5): use state_patch resources
-#   state_add_package                                   → DEPRECATED (Phase 4.5): use state_patch_add_resource
-#   state_remove_feature, state_set_runtime             → DEPRECATED (Phase 4), see individual functions
 
 # state_init
 # Initialize or load state. Calls state_load (which auto-migrates v1 if needed).
@@ -590,6 +608,7 @@ state_has_feature() {
         log_error "state_has_feature: feature name is required"
         return 1
     fi
+        feature=$(_state_normalize_feature_id "$feature") || return 1
     _state_ensure_loaded || return 1
     echo "$_STATE_JSON" | jq -e --arg f "$feature" '.features[$f] != null' >/dev/null 2>&1
 }
@@ -601,23 +620,6 @@ state_list_features() {
     echo "$_STATE_JSON" | jq -r '.features | keys[]' 2>/dev/null
 }
 
-# state_get_packages <feature>
-# DEPRECATED (Phase 4.5): package resources are now managed via executor + backends.
-# Use direct jq queries on state JSON or remove entirely from feature scripts.
-# Output package names tracked for a feature (one per line).
-state_get_packages() {
-    local feature="$1"
-    if [[ -z "$feature" ]]; then
-        log_error "state_get_packages: feature name is required"
-        return 1
-    fi
-    _state_ensure_loaded || return 1
-    echo "$_STATE_JSON" | jq -r \
-        --arg f "$feature" \
-        '.features[$f].resources // [] | .[] | select(.kind == "package") | .package.name' \
-        2>/dev/null
-}
-
 # state_get_files <feature>
 # Output file paths tracked for a feature (one per line).
 state_get_files() {
@@ -626,6 +628,7 @@ state_get_files() {
         log_error "state_get_files: feature name is required"
         return 1
     fi
+        feature=$(_state_normalize_feature_id "$feature") || return 1
     _state_ensure_loaded || return 1
     echo "$_STATE_JSON" | jq -r \
         --arg f "$feature" \
@@ -651,68 +654,6 @@ state_has_file() {
         >/dev/null 2>&1
 }
 
-# state_remove_feature <feature>
-# DEPRECATED (Phase 4): use state_patch_remove_feature + state_patch_finalize instead.
-# Executor calls state_patch_remove_feature; uninstall scripts no longer call this.
-# Remove a feature entry from state and commit atomically.
-state_remove_feature() {
-    local feature="$1"
-    if [[ -z "$feature" ]]; then
-        log_error "state_remove_feature: feature name is required"
-        return 1
-    fi
-    _state_ensure_loaded || return 1
-
-    if ! echo "$_STATE_JSON" | jq -e --arg f "$feature" '.features[$f] != null' >/dev/null 2>&1; then
-        log_warn "state_remove_feature: feature not found: $feature"
-        return 0
-    fi
-
-    local new_json
-    new_json=$(echo "$_STATE_JSON" | jq --arg f "$feature" 'del(.features[$f])')
-    state_commit_atomic "$new_json"
-}
-
-# state_add_package <feature> <package_name>
-# DEPRECATED (Phase 4.5): package installation is now managed by executor via backends.
-# Use state_patch_add_resource in executor instead. Remove from feature scripts.
-# Register a package resource for a feature and commit atomically.
-# Idempotent: replaces any existing resource with the same id.
-state_add_package() {
-    local feature="$1"
-    local package_name="$2"
-
-    if [[ -z "$feature" ]] || [[ -z "$package_name" ]]; then
-        log_error "state_add_package: feature and package_name are required"
-        return 1
-    fi
-    _state_ensure_loaded || return 1
-
-    local resource
-    resource=$(jq -n \
-        --arg name "$package_name" '
-        {
-            kind: "package",
-            id: ("pkg:" + $name),
-            backend: "unknown",
-            package: { name: $name, version: null }
-        }
-    ')
-
-    local new_json
-    new_json=$(echo "$_STATE_JSON" | jq \
-        --arg f "$feature" \
-        --argjson res "$resource" '
-        if .features[$f] == null then
-            .features[$f] = {"resources": []}
-        else . end |
-        .features[$f].resources = (
-            [.features[$f].resources[] | select(.id != $res.id)] + [$res]
-        )
-    ')
-    state_commit_atomic "$new_json"
-}
-
 # state_add_file <feature> <path>
 # Register an fs resource for a feature and commit atomically.
 # entry_type and op are inferred from the filesystem at call time.
@@ -725,6 +666,7 @@ state_add_file() {
         log_error "state_add_file: feature and path are required"
         return 1
     fi
+        feature=$(_state_normalize_feature_id "$feature") || return 1
     _state_ensure_loaded || return 1
 
     # Infer entry_type and op from the actual filesystem entry
@@ -773,54 +715,6 @@ state_add_file() {
     state_commit_atomic "$new_json"
 }
 
-# state_set_runtime <feature> <key> <value>
-# DEPRECATED (Phase 4): executor writes runtime resources from meta.yaml declarations.
-# Feature scripts no longer call this function.
-# Register (or replace) a runtime resource for a feature.
-state_set_runtime() {
-    local feature="$1"
-    local key="$2"
-    local value="$3"
-
-    if [[ -z "$feature" ]] || [[ -z "$key" ]]; then
-        log_error "state_set_runtime: feature and key are required"
-        return 1
-    fi
-    _state_ensure_loaded || return 1
-
-    if [[ "$key" != "version" ]]; then
-        # Non-version keys are not mapped to v2 resources; silently ignore.
-        # Will be re-evaluated when feature scripts are rewritten in Phase 4.
-        return 0
-    fi
-
-    local resource
-    resource=$(jq -n \
-        --arg fid "$feature" \
-        --arg ver "$value" '
-        {
-            kind: "runtime",
-            id: ("rt:" + $fid + "@" + $ver),
-            backend: "unknown",
-            runtime: { name: $fid, version: $ver }
-        }
-    ')
-
-    # Replace any existing runtime resource for this feature (version change)
-    local new_json
-    new_json=$(echo "$_STATE_JSON" | jq \
-        --arg f "$feature" \
-        --argjson res "$resource" '
-        if .features[$f] == null then
-            .features[$f] = {"resources": []}
-        else . end |
-        .features[$f].resources = (
-            [.features[$f].resources[] | select(.kind != "runtime")] + [$res]
-        )
-    ')
-    state_commit_atomic "$new_json"
-}
-
 # state_get_runtime <feature> <key>
 # Return the value for <key> from the runtime resource of a feature.
 # Only key="version" is supported; returns the runtime.version string.
@@ -832,6 +726,7 @@ state_get_runtime() {
         log_error "state_get_runtime: feature and key are required"
         return 1
     fi
+        feature=$(_state_normalize_feature_id "$feature") || return 1
     _state_ensure_loaded || return 1
 
     if [[ "$key" != "version" ]]; then
@@ -843,27 +738,4 @@ state_get_runtime() {
         '.features[$f].resources // [] |
          .[] | select(.kind == "runtime") | .runtime.version' \
         2>/dev/null | head -n1
-}
-
-# state_has_runtime <feature> <key>
-# Return 0 if a runtime resource exists for the feature, 1 otherwise.
-state_has_runtime() {
-    local feature="$1"
-    local key="$2"
-
-    if [[ -z "$feature" ]] || [[ -z "$key" ]]; then
-        log_error "state_has_runtime: feature and key are required"
-        return 1
-    fi
-    _state_ensure_loaded || return 1
-
-    if [[ "$key" != "version" ]]; then
-        return 1
-    fi
-
-    echo "$_STATE_JSON" | jq -e \
-        --arg f "$feature" \
-        '.features[$f].resources // [] |
-         [.[] | select(.kind == "runtime")] | length > 0' \
-        >/dev/null 2>&1
 }

@@ -234,9 +234,10 @@ _executor_apply_runtimes() {
     rt_count=$(echo "$merged_rts" | jq 'length')
     ((rt_count == 0)) && return 0
 
-    for ((i = 0; i < rt_count; i++)); do
+    local rt_idx
+    for ((rt_idx = 0; rt_idx < rt_count; rt_idx++)); do
         local rt_entry rt_name rt_meta_ver rt_version
-        rt_entry=$(echo "$merged_rts" | jq --argjson i "$i" '.[$i]')
+        rt_entry=$(echo "$merged_rts" | jq --argjson i "$rt_idx" '.[$i]')
         rt_name=$(echo "$rt_entry" | jq -r '.name')
         rt_meta_ver=$(echo "$rt_entry" | jq -r '.version // empty')
 
@@ -297,9 +298,10 @@ _executor_deploy_files() {
     file_count=$(echo "$merged_files" | jq 'length')
     ((file_count == 0)) && return 0
 
-    for ((i = 0; i < file_count; i++)); do
+    local file_idx
+    for ((file_idx = 0; file_idx < file_count; file_idx++)); do
         local entry src_rel op target
-        entry=$(echo "$merged_files" | jq --argjson i "$i" '.[$i]')
+        entry=$(echo "$merged_files" | jq --argjson i "$file_idx" '.[$i]')
         src_rel=$(echo "$entry" | jq -r '.src')
         op=$(echo "$entry" | jq -r '.op // "link"')
         # Expand ~ in target path
@@ -386,9 +388,10 @@ _executor_remove_resources() {
     ((rc == 0)) && return 0
 
     # 1. Remove fs resources (files / dirs / symlinks)
-    for ((i = 0; i < rc; i++)); do
+    local resource_idx
+    for ((resource_idx = 0; resource_idx < rc; resource_idx++)); do
         local res kind
-        res=$(echo "$resources" | jq --argjson i "$i" '.[$i]')
+        res=$(echo "$resources" | jq --argjson i "$resource_idx" '.[$i]')
         kind=$(echo "$res" | jq -r '.kind')
         [[ "$kind" != "fs" ]] && continue
 
@@ -401,9 +404,9 @@ _executor_remove_resources() {
     done
 
     # 2. Uninstall managed runtimes (backend != "unknown")
-    for ((i = 0; i < rc; i++)); do
+    for ((resource_idx = 0; resource_idx < rc; resource_idx++)); do
         local res kind backend
-        res=$(echo "$resources" | jq --argjson i "$i" '.[$i]')
+        res=$(echo "$resources" | jq --argjson i "$resource_idx" '.[$i]')
         kind=$(echo "$res" | jq -r '.kind')
         [[ "$kind" != "runtime" ]] && continue
         backend=$(echo "$res" | jq -r '.backend // "unknown"')
@@ -419,9 +422,9 @@ _executor_remove_resources() {
     done
 
     # 3. Uninstall managed packages (backend != "unknown", managed != false)
-    for ((i = 0; i < rc; i++)); do
+    for ((resource_idx = 0; resource_idx < rc; resource_idx++)); do
         local res kind backend
-        res=$(echo "$resources" | jq --argjson i "$i" '.[$i]')
+        res=$(echo "$resources" | jq --argjson i "$resource_idx" '.[$i]')
         kind=$(echo "$res" | jq -r '.kind')
         [[ "$kind" != "package" ]] && continue
         backend=$(echo "$res" | jq -r '.backend // "unknown"')
@@ -645,10 +648,10 @@ executor_run() {
     # Log action list for diagnostics
     log_info "Actions: $(echo "$plan_json" | jq -r '.actions[] | "\(.operation) \(.feature)"' | tr '\n' ',' | sed 's/,$//g')"
 
-    local i
-    for ((i = 0; i < action_count; i++)); do
+    local action_idx
+    for ((action_idx = 0; action_idx < action_count; action_idx++)); do
         local action feature operation config_version
-        action=$(echo "$plan_json" | jq --argjson i "$i" '.actions[$i]')
+        action=$(echo "$plan_json" | jq --argjson i "$action_idx" '.actions[$i]')
         feature=$(echo "$action" | jq -r '.feature')
         operation=$(echo "$action" | jq -r '.operation')
         config_version=$(echo "$action" | jq -r '.details.config_version // empty')
