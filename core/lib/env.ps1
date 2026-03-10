@@ -17,9 +17,10 @@ $global:DOTFILES_ROOT = $script:DOTFILES_ROOT
 $global:DOTFILES_PLATFORM = "windows"
 
 # XDG/AppData directories
-$script:ConfigBase = if ($env:APPDATA) { $env:APPDATA } else { Join-Path $HOME ".config" }
-$script:StateBase = if ($env:LOCALAPPDATA) { $env:LOCALAPPDATA } else { Join-Path $HOME ".local\state" }
-$script:DataBase = if ($env:LOCALAPPDATA) { $env:LOCALAPPDATA } else { Join-Path $HOME ".local\share" }
+$script:UserProfileBase = if ($env:USERPROFILE) { $env:USERPROFILE } else { $HOME }
+$script:ConfigBase = if ($env:APPDATA) { $env:APPDATA } else { Join-Path $script:UserProfileBase "AppData\Roaming" }
+$script:StateBase = if ($env:LOCALAPPDATA) { $env:LOCALAPPDATA } else { Join-Path $script:UserProfileBase "AppData\Local" }
+$script:DataBase = if ($env:LOCALAPPDATA) { $env:LOCALAPPDATA } else { Join-Path $script:UserProfileBase "AppData\Local" }
 
 $global:DOTFILES_CONFIG_HOME = Join-Path $script:ConfigBase "dotfiles"
 $global:DOTFILES_STATE_HOME = Join-Path $script:StateBase "dotfiles"

@@ -20,15 +20,10 @@
 #   State-Init                                        — keep (used by scripts)
 #   State-HasFeature <Feature>                        — keep
 #   State-ListFeatures                                — keep
-#   State-GetPackages <Feature>                       — DEPRECATED (Phase 4.5)
 #   State-GetFiles <Feature>                          — keep
 #   State-HasFile <path>                              — keep
-#   State-AddPackage <Feature> <Package>              — DEPRECATED (Phase 4.5)
 #   State-AddFile <Feature> <File>                    — keep (git gitconfig complex merge)
 #   State-GetRuntime <Feature> <Key>                  — keep (read-only)
-#   State-HasRuntime <Feature> <Key>                  — keep (read-only)
-#   State-RemoveFeature <Feature>                     — DEPRECATED; executor uses State-PatchRemoveFeature
-#   State-SetRuntime <Feature> <Key> <Value>          — DEPRECATED; executor writes runtime resources
 # -----------------------------------------------------------------------------
 
 Set-StrictMode -Version Latest
@@ -70,6 +65,24 @@ function _State-GetFilePath {
     }
     return Get-DotfilesStateFilePath
 }
+
+    function _State-NormalizeFeatureId {
+        param([Parameter(Mandatory=$true)] [string]$Feature)
+
+        if ([string]::IsNullOrWhiteSpace($Feature)) {
+            throw "_State-NormalizeFeatureId: feature name is required"
+        }
+
+        if (Get-Command Canonical-Id-Normalize -ErrorAction SilentlyContinue) {
+            return (Canonical-Id-Normalize -Name $Feature -DefaultSourceId "core")
+        }
+
+        if ($Feature -match '/') {
+            return $Feature
+        }
+
+        return "core/$Feature"
+    }
 
 # ── Stable Core API ───────────────────────────────────────────────────────────
 
@@ -247,6 +260,7 @@ function State-CommitAtomic {
 function State-QueryFeature {
     param([Parameter(Mandatory=$true)] [string]$Feature)
     _State-EnsureLoaded
+        $Feature = _State-NormalizeFeatureId -Feature $Feature
     $prop = $script:StateData.features.PSObject.Properties[$Feature]
     if ($null -ne $prop) { return $prop.Value }
     return $null
@@ -257,6 +271,7 @@ function State-QueryFeature {
 function State-QueryResources {
     param([Parameter(Mandatory=$true)] [string]$Feature)
     _State-EnsureLoaded
+        $Feature = _State-NormalizeFeatureId -Feature $Feature
     $feat = State-QueryFeature -Feature $Feature
     if ($null -eq $feat) { return @() }
     return @($feat.resources)
@@ -280,6 +295,8 @@ function State-PatchAddResource {
         [Parameter(Mandatory=$true)] $ResourceObject
     )
 
+        $Feature = _State-NormalizeFeatureId -Feature $Feature
+
     if ($null -eq $script:StatePatchData) {
         Log-Error "State-PatchAddResource: no patch in progress; call State-PatchBegin first"
         return
@@ -301,6 +318,8 @@ function State-PatchAddResource {
 # Remove a feature entry from the patch working copy.
 function State-PatchRemoveFeature {
     param([Parameter(Mandatory=$true)] [string]$Feature)
+
+        $Feature = _State-NormalizeFeatureId -Feature $Feature
 
     if ($null -eq $script:StatePatchData) {
         Log-Error "State-PatchRemoveFeature: no patch in progress; call State-PatchBegin first"
@@ -516,6 +535,7 @@ function State-Init {
 function State-HasFeature {
     param([Parameter(Mandatory=$true)] [string]$Feature)
     _State-EnsureLoaded
+        $Feature = _State-NormalizeFeatureId -Feature $Feature
     return $null -ne $script:StateData.features.PSObject.Properties[$Feature]
 }
 
@@ -525,20 +545,11 @@ function State-ListFeatures {
     return @($script:StateData.features.PSObject.Properties | ForEach-Object { $_.Name })
 }
 
-# State-GetPackages <Feature>
-# DEPRECATED (Phase 4.5): package resources are now managed via executor + backends.
-# Use direct state queries or remove from feature scripts entirely.
-# Return package names (strings) for the feature.
-function State-GetPackages {
-    param([Parameter(Mandatory=$true)] [string]$Feature)
-    $resources = State-QueryResources -Feature $Feature
-    return @($resources | Where-Object { $_.kind -eq "package" } | ForEach-Object { $_.package.name })
-}
-
 # State-GetFiles <Feature>
 # Return file paths (strings) for the feature.
 function State-GetFiles {
     param([Parameter(Mandatory=$true)] [string]$Feature)
+        $Feature = _State-NormalizeFeatureId -Feature $Feature
     $resources = State-QueryResources -Feature $Feature
     return @($resources | Where-Object { $_.kind -eq "fs" } | ForEach-Object { $_.fs.path })
 }
@@ -555,55 +566,6 @@ function State-HasFile {
     return $false
 }
 
-# State-RemoveFeature <Feature>
-# DEPRECATED (Phase 4): use State-PatchRemoveFeature + State-PatchFinalize instead.
-# Executor calls State-PatchRemoveFeature; uninstall scripts no longer call this.
-function State-RemoveFeature {
-    param([Parameter(Mandatory=$true)] [string]$Feature)
-    _State-EnsureLoaded
-
-    if (-not (State-HasFeature -Feature $Feature)) {
-        Log-Warn "State-RemoveFeature: feature not found: $Feature"
-        return $true
-    }
-
-    $newState = _State-DeepClone $script:StateData
-    $newState.features.PSObject.Properties.Remove($Feature)
-    return State-CommitAtomic -StateObject $newState
-}
-
-# State-AddPackage <Feature> <Package>
-# DEPRECATED (Phase 4.5): package installation is now managed by executor via backends.
-# Use State-PatchAddResource in executor instead. Remove from feature scripts.
-# Register a package resource and commit atomically.
-function State-AddPackage {
-    param(
-        [Parameter(Mandatory=$true)] [string]$Feature,
-        [Parameter(Mandatory=$true)] [string]$Package
-    )
-    _State-EnsureLoaded
-
-    $resource = [PSCustomObject]@{
-        kind    = "package"
-        id      = "pkg:$Package"
-        backend = "unknown"
-        package = [PSCustomObject]@{ name = $Package; version = $null }
-    }
-
-    $newState = _State-DeepClone $script:StateData
-
-    if ($null -eq $newState.features.PSObject.Properties[$Feature]) {
-        $newState.features | Add-Member -MemberType NoteProperty -Name $Feature `
-            -Value ([PSCustomObject]@{ resources = @() })
-    }
-
-    $feat = $newState.features.$Feature
-    $newResources = @($feat.resources | Where-Object { $_.id -ne $resource.id }) + @($resource)
-    $feat.resources = $newResources
-
-    return State-CommitAtomic -StateObject $newState
-}
-
 # State-AddFile <Feature> <File>
 # Register an fs resource and commit atomically.
 # entry_type and op are inferred from the filesystem at call time.
@@ -613,6 +575,7 @@ function State-AddFile {
         [Parameter(Mandatory=$true)] [string]$File
     )
     _State-EnsureLoaded
+        $Feature = _State-NormalizeFeatureId -Feature $Feature
 
     # Infer entry_type and op from actual filesystem state
     $entryType = "file"
@@ -655,46 +618,6 @@ function State-AddFile {
     return State-CommitAtomic -StateObject $newState
 }
 
-# State-SetRuntime <Feature> <Key> <Value>
-# DEPRECATED (Phase 4): executor writes runtime resources from meta.yaml declarations.
-# Feature scripts no longer call this function.
-# Register (or replace) a runtime resource for a feature.
-# Only Key="version" is currently used; runtime name is derived from the feature id.
-function State-SetRuntime {
-    param(
-        [Parameter(Mandatory=$true)] [string]$Feature,
-        [Parameter(Mandatory=$true)] [string]$Key,
-        [Parameter(Mandatory=$true)] [string]$Value
-    )
-    _State-EnsureLoaded
-
-    if ($Key -ne "version") {
-        # Non-version keys are not mapped to v2 resources; silently ignore.
-        return $true
-    }
-
-    $resource = [PSCustomObject]@{
-        kind    = "runtime"
-        id      = "rt:${Feature}@${Value}"
-        backend = "unknown"
-        runtime = [PSCustomObject]@{ name = $Feature; version = $Value }
-    }
-
-    $newState = _State-DeepClone $script:StateData
-
-    if ($null -eq $newState.features.PSObject.Properties[$Feature]) {
-        $newState.features | Add-Member -MemberType NoteProperty -Name $Feature `
-            -Value ([PSCustomObject]@{ resources = @() })
-    }
-
-    $feat = $newState.features.$Feature
-    # Remove any existing runtime resource before adding the new one (handles version change)
-    $newResources = @($feat.resources | Where-Object { $_.kind -ne "runtime" }) + @($resource)
-    $feat.resources = $newResources
-
-    return State-CommitAtomic -StateObject $newState
-}
-
 # State-GetRuntime <Feature> <Key>
 # Return the value for <Key> from the runtime resource of a feature.
 # Only Key="version" is supported.
@@ -704,6 +627,7 @@ function State-GetRuntime {
         [Parameter(Mandatory=$true)] [string]$Key
     )
     _State-EnsureLoaded
+        $Feature = _State-NormalizeFeatureId -Feature $Feature
 
     if ($Key -ne "version") { return $null }
 
@@ -711,18 +635,4 @@ function State-GetRuntime {
     $rt = $resources | Where-Object { $_.kind -eq "runtime" } | Select-Object -First 1
     if ($null -ne $rt) { return $rt.runtime.version }
     return $null
-}
-
-# State-HasRuntime <Feature> <Key>
-function State-HasRuntime {
-    param(
-        [Parameter(Mandatory=$true)] [string]$Feature,
-        [Parameter(Mandatory=$true)] [string]$Key
-    )
-    _State-EnsureLoaded
-
-    if ($Key -ne "version") { return $false }
-
-    $resources = State-QueryResources -Feature $Feature
-    return ($resources | Where-Object { $_.kind -eq "runtime" } | Measure-Object).Count -gt 0
 }
