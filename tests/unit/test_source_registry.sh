@@ -11,55 +11,9 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
-# ── Minimal logger stub (no color, writes to stderr) ──────────────────────────
-log_error() { echo "[ERROR] $*" >&2; }
-log_warn()  { echo "[WARN]  $*" >&2; }
-log_info()  { echo "[INFO]  $*" >&2; }
+source "$(dirname "${BASH_SOURCE[0]}")/helpers.sh"
 
 source "$REPO_ROOT/core/lib/source_registry.sh"
-
-# ── Test harness ──────────────────────────────────────────────────────────────
-
-_PASS=0
-_FAIL=0
-
-# _assert_eq <test_name> <expected> <actual>
-_assert_eq() {
-    local name="$1" expected="$2" actual="$3"
-    if [[ "$expected" == "$actual" ]]; then
-        echo "  PASS  $name"
-        (( _PASS++ )) || true
-    else
-        echo "  FAIL  $name"
-        echo "        expected: '$expected'"
-        echo "        actual:   '$actual'"
-        (( _FAIL++ )) || true
-    fi
-}
-
-# _assert_return0 <test_name> <command...>
-_assert_return0() {
-    local name="$1"; shift
-    if "$@" > /dev/null 2>&1; then
-        echo "  PASS  $name"
-        (( _PASS++ )) || true
-    else
-        echo "  FAIL  $name (expected exit 0, got non-zero)"
-        (( _FAIL++ )) || true
-    fi
-}
-
-# _assert_return1 <test_name> <command...>
-_assert_return1() {
-    local name="$1"; shift
-    if "$@" > /dev/null 2>&1; then
-        echo "  FAIL  $name (expected non-zero, got exit 0)"
-        (( _FAIL++ )) || true
-    else
-        echo "  PASS  $name"
-        (( _PASS++ )) || true
-    fi
-}
 
 # ── canonical_id_normalize ────────────────────────────────────────────────────
 
@@ -178,9 +132,4 @@ _assert_return0 "official is in reserved list" \
 
 # ── Summary ───────────────────────────────────────────────────────────────────
 
-echo ""
-echo "Results: ${_PASS} passed, ${_FAIL} failed"
-
-if [[ "$_FAIL" -gt 0 ]]; then
-    exit 1
-fi
+_print_summary

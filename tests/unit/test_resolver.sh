@@ -12,69 +12,13 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
-# ── Minimal stubs ─────────────────────────────────────────────────────────────
-log_error() { echo "[ERROR] $*" >&2; }
-log_warn()  { echo "[WARN]  $*" >&2; }
-log_info()  { echo "[INFO]  $*" >&2; }
-log_success() { echo "[OK]    $*" >&2; }
+source "$(dirname "${BASH_SOURCE[0]}")/helpers.sh"
 
 export DOTFILES_ROOT="$REPO_ROOT"
 export DOTFILES_PLATFORM="linux"
 
 source "$REPO_ROOT/core/lib/source_registry.sh"
 source "$REPO_ROOT/core/lib/resolver.sh"
-
-# ── Test harness ──────────────────────────────────────────────────────────────
-
-_PASS=0
-_FAIL=0
-
-_assert_eq() {
-    local name="$1" expected="$2" actual="$3"
-    if [[ "$expected" == "$actual" ]]; then
-        echo "  PASS  $name"
-        (( _PASS++ )) || true
-    else
-        echo "  FAIL  $name"
-        echo "        expected: '$expected'"
-        echo "        actual:   '$actual'"
-        (( _FAIL++ )) || true
-    fi
-}
-
-_assert_contains() {
-    local name="$1" needle="$2" haystack="$3"
-    if [[ " $haystack " == *" $needle "* ]]; then
-        echo "  PASS  $name"
-        (( _PASS++ )) || true
-    else
-        echo "  FAIL  $name"
-        echo "        expected '$needle' in: '$haystack'"
-        (( _FAIL++ )) || true
-    fi
-}
-
-_assert_return0() {
-    local name="$1"; shift
-    if "$@" > /dev/null 2>&1; then
-        echo "  PASS  $name"
-        (( _PASS++ )) || true
-    else
-        echo "  FAIL  $name (expected exit 0, got non-zero)"
-        (( _FAIL++ )) || true
-    fi
-}
-
-_assert_return1() {
-    local name="$1"; shift
-    if "$@" > /dev/null 2>&1; then
-        echo "  FAIL  $name (expected non-zero, got exit 0)"
-        (( _FAIL++ )) || true
-    else
-        echo "  PASS  $name"
-        (( _PASS++ )) || true
-    fi
-}
 
 # ── Setup: temp feature directory ────────────────────────────────────────────
 
@@ -306,9 +250,4 @@ echo "  PASS  no bare names in output (${#real_sorted[@]} features checked)"
 
 # ── Summary ────────────────────────────────────────────────────────────────────
 
-echo ""
-echo "Results: ${_PASS} passed, ${_FAIL} failed"
-
-if [[ "$_FAIL" -gt 0 ]]; then
-    exit 1
-fi
+_print_summary
