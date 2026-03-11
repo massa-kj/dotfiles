@@ -8,8 +8,8 @@ For the interface contract you must satisfy, see `specs/api/backend.md`.
 
 ## Backend Structure
 
-A backend is a shell script located at `backends/<name>.sh` (Linux/WSL)
-or `backends/<name>.ps1` (Windows).
+A backend is a script located at `backends/<name>.sh` (Linux/WSL)
+or `backends/<name>.ps1` (Windows) within a source root.
 
 Core loads backends by sourcing the file. The script must not produce side effects on load.
 
@@ -18,6 +18,15 @@ backends/
 └── brew.sh       # Example: Homebrew backend
 └── mise.sh       # Example: mise backend
 ```
+
+Backend roots are source-specific:
+
+* built-in: `{repo}/backends/`
+* user: config home `backends/`
+* external: data home `sources/<source_id>/backends/`
+
+Backend IDs follow the same canonical format as features: `<source_id>/<name>`.
+Bare backend names in policy are normalized to `core/<name>`.
 
 ## Implementing a Backend
 

@@ -19,6 +19,16 @@ features:
 
 Top-level key is `features`. All other top-level keys are reserved.
 
+## File Location
+
+Profile directory is platform-defined:
+
+* Linux/WSL: `$XDG_CONFIG_HOME/dotfiles/profiles/`
+* Linux/WSL fallback: `~/.config/dotfiles/profiles/`
+* Windows: `%APPDATA%\dotfiles\profiles\`
+
+`DOTFILES_PROFILES_DIR` may override the directory path.
+
 ### `features` (required)
 
 An object where each key is a feature identifier (string).
@@ -45,10 +55,19 @@ or any platform-specific behavior. That belongs to policy and feature scripts.
 Features absent from the profile are treated as "not desired".
 If such a feature exists in state, the planner will classify it as `destroy`.
 
+Feature key normalization rules:
+
+* Bare feature key `git` is normalized to `core/git`
+* Canonical feature key `core/git` is preserved as-is
+* `user` and external source features must be explicit, e.g. `user/myfeat`, `community/node`
+
+The normalized canonical IDs are what planner, resolver, executor, and state use internally.
+
 ## Validation Rules
 
 * `features` must be an object.
 * Each key must be a non-empty string.
+* Each key must be either a bare name or a canonical ID of the form `<source_id>/<name>`.
 * Each value must be a map (or null/empty, equivalent to `{}`).
 * Unknown fields in the feature configuration map are permitted and ignored by core.
 
@@ -75,6 +94,14 @@ features:
   bash: {}
 ```
 
+Equivalent canonical form after normalization:
+
+```yaml
+features:
+  core/git: {}
+  core/bash: {}
+```
+
 Feature with version:
 
 ```yaml
@@ -83,4 +110,5 @@ features:
     version: "22.17.1"
   python:
     version: "3.12"
+  user/myfeat: {}
 ```

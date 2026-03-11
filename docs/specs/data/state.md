@@ -21,31 +21,36 @@ State contains effects only. No desired state. No policy. No dependency graphs.
 
 ## File Location
 
-Core locates the state directory via:
+Authoritative file path is platform-defined:
 
-1. `DOTFILES_STATE_DIR` environment variable, if set and non-empty.
-2. Otherwise: `${DOTFILES_ROOT}/state`
+* Linux/WSL: `$XDG_STATE_HOME/dotfiles/state.json`
+* Linux/WSL fallback: `~/.local/state/dotfiles/state.json`
+* Windows: `%LOCALAPPDATA%\dotfiles\state.json`
 
-Authoritative file: `${STATE_DIR}/state.json`
+The state path is not directly overridable by `DOTFILES_STATE_FILE` or `DOTFILES_STATE_DIR`.
+Path customization must happen through platform-specific base directory variables such as `XDG_STATE_HOME`.
 
 * Must be JSON encoded in UTF-8.
-* `${STATE_DIR}` must be created if missing.
+* Parent directory must be created if missing.
 * `state.json` must be created (empty state) if missing.
 
 ## Schema
 
 ```json
 {
-  "version": 2,
+  "version": 3,
   "features": {
-    "<feature_id>": {
+    "<canonical_id>": {
       "resources": [ <resource_entry>, ... ]
     }
   }
 }
 ```
 
-`version` must be `2`. `features` must be an object.
+`version` must be `3`. `features` must be an object.
+
+Feature keys are **canonical IDs** in the format `<source_id>/<name>`, e.g. `core/git`.
+All bare names (legacy v2 state) must be prefixed with `core/` when migrating to v3.
 
 ### Resource kinds
 
@@ -61,6 +66,7 @@ Authoritative file: `${STATE_DIR}/state.json`
 ```
 
 `version: null` means unknown or unpinned — not "latest".
+`backend` must be a canonical backend ID of the form `<source_id>/<name>`, e.g. `core/brew`.
 
 **`runtime`**
 
@@ -72,6 +78,8 @@ Authoritative file: `${STATE_DIR}/state.json`
   "runtime": { "name": "<string>", "version": "<string>" }
 }
 ```
+
+`backend` must be a canonical backend ID of the form `<source_id>/<name>`, e.g. `core/mise`.
 
 **`fs`**
 
@@ -100,7 +108,7 @@ The same `fs.path` must NOT be recorded by multiple features.
 
 Core must validate all invariants before execution. If any fails, execution must abort.
 
-1. `version` must be `2`.
+1. `version` must be `3`.
 2. `features` must be an object.
 3. Each feature entry must contain a `resources` array.
 4. Each resource must have a valid `kind` and matching kind payload.
@@ -160,13 +168,55 @@ Load mode: tolerate unknown `kind` values (preserve raw JSON, enforce structural
 Execute mode: reject execution of any feature containing an unknown `kind`.
 Other features are not blocked unless they depend on the blocked feature.
 
-## Compatibility
+## Compatibility and Migration
 
-v1 state may be read for migration. Executing with v1 state requires an explicit migration path.
-Post-migration state must be v2.
+### v1 State
 
-A `migrate-state` command (or equivalent) must be side-effect free, back up existing state,
-validate the migrated result, and commit atomically.
+v1 state may be read for migration. Executing with v1 state requires an explicit `dotfiles migrate` command.
+
+### v2 State
+
+v2 state used bare feature names as keys (e.g., `"git"`). v2 state cannot be executed directly in Phase 3+;
+the `dotfiles migrate` command must be run first to upgrade to v3.
+
+### v2 → v3 Migration
+
+**Transformation:**
+  1. For each feature key in `features` object:
+     - If the key contains `/` (already canonical), keep it unchanged.
+     - Otherwise (bare name), prefix with `core/` to form canonical ID.
+  2. Increment `version` from `2` to `3`.
+  3. Preserve all resource entries unchanged.
+
+**Example:**
+
+```json
+// v2 state
+{
+  "version": 2,
+  "features": {
+    "git": { "resources": [...] },
+    "core/ruby": { "resources": [...] }
+  }
+}
+
+// v3 state after migration
+{
+  "version": 3,
+  "features": {
+    "core/git": { "resources": [...] },
+    "core/ruby": { "resources": [...] }
+  }
+}
+```
+
+**Mutual exclusivity:**
+- Once v3 is committed, v2 state cannot be executed (commands will reject it).
+- Migration is idempotent: running migrate on v3 state is a no-op.
+
+A `dotfiles migrate` command must be side-effect free in dry-run mode (`--dry-run`),
+back up existing state (timestamped), validate the migrated result, and commit atomically.
+Profile YAML may optionally be updated with canonical IDs via `--profiles` flag.
 
 ## Prohibited Content
 

@@ -28,6 +28,9 @@ Planner operates only on:
 2. `state` — current authoritative state
 3. `policy` — backend resolution strategy
 
+Feature identifiers in `profile`, `state`, and planner output are canonical IDs of the form
+`<source_id>/<name>`. Planner does not normalize bare names; normalization happens before planner input construction.
+
 Planner must NOT depend on current time, environment randomness, or live backend results.
 Planner must NOT call backend observation API.
 Environment detection via backend observation API is performed by the `plan` command layer,
@@ -76,11 +79,11 @@ Table must be deterministic, total (every classification maps to an action), and
 ```json
 {
   "actions": [
-    { "feature": "git", "operation": "create" },
-    { "feature": "node", "operation": "replace", "details": { "from_version": "18", "to_version": "20" } }
+    { "feature": "core/git", "operation": "create" },
+    { "feature": "core/node", "operation": "replace", "details": { "from_version": "18", "to_version": "20" } }
   ],
-  "noops": [ { "feature": "bash" } ],
-  "blocked": [ { "feature": "legacy", "reason": "unknown resource kind: registry" } ],
+  "noops": [ { "feature": "core/bash" } ],
+  "blocked": [ { "feature": "user/legacy", "reason": "unknown resource kind: registry" } ],
   "summary": { "create": 1, "replace": 1, "destroy": 0, "blocked": 1 }
 }
 ```
@@ -98,6 +101,7 @@ Table must be deterministic, total (every classification maps to an action), and
 4. `replace_backend` treated as `replace`
 
 Ordering must be derived from resolver output. Must not rely on feature script order.
+Source location must not affect ordering; only canonical dependency edges may do so.
 
 ## Plan Command
 

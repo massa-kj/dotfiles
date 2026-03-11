@@ -42,7 +42,7 @@ Must NOT: perform package management directly, re-classify after planner has dec
 
 Provide infrastructure primitives.
 
-Includes: resolver, planner, executor, state, backend_registry, env, fs, logger, runner.
+Includes: resolver, planner, executor, state, backend_registry, source_registry, env, fs, logger, runner.
 
 Must NOT: contain feature-specific logic, contain backend-specific logic,
 let plugins read policy or write state directly.
@@ -75,7 +75,9 @@ See `specs/data/state.md` for the full contract.
 ## Data Flow
 
 ```
-Profile + Policy + State
+Profile + Policy + State + Sources
+    ↓
+  Source Registry  (pure lookup — canonical ID → source paths / allow-list)
     ↓
   Resolver  (pure — builds feature DAG, topological sort)
     ↓
@@ -89,6 +91,7 @@ Profile + Policy + State
 Planner is pure: same inputs always produce the same Plan.
 Executor is impure: calls feature scripts and backend plugins, commits state atomically.
 State is both input (current reality) and output (recorded effects).
+Source registry data influences lookup and admission only; it must not introduce hidden fallback or side effects.
 
 ## Repository Structure
 
@@ -101,20 +104,20 @@ dotfiles/
 ├── core/lib/                  # Infrastructure primitives
 │   ├── env, logger, fs, runner
 │   ├── resolver, planner, executor
-│   └── state, backend_registry, orchestrator
+│   └── state, backend_registry, source_registry, orchestrator
 ├── features/                  # Self-contained feature modules
 ├── backends/                  # Backend plugin scripts
 ├── platforms/                 # Bootstrap scripts per platform
-├── profiles/                  # Declarative environment definitions
-├── policies/                  # Backend selection strategy
-├── state/                     # Installation state (authoritative)
+├── profiles/                  # Repository examples / fixtures
+├── policies/                  # Repository examples / fixtures
 ├── tools/                     # Tools for development
 └── tests/                     # Unit and integration tests
 ```
 
 Directory boundaries enforce layer separation.
 Feature independence is enforced through self-contained module directories.
-State authority is enforced through a dedicated directory with a single authoritative file.
+State authority is enforced through a single authoritative file under the platform state directory.
+Authoritative runtime paths for profiles, policies, state, and sources live under XDG/AppData locations, not under the repository root.
 
 ## Layer Violation Examples
 

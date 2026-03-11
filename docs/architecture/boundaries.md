@@ -59,6 +59,7 @@ Dependency declarations are for ordering only.
 * Depth must remain shallow
 
 If a required capability (`requires`) has no provider in the current profile, apply aborts.
+If a dependency or backend references an external source item blocked by the source registry, apply aborts.
 
 ## Prohibited (Non-Negotiable)
 

@@ -12,6 +12,7 @@ what invariants must hold. They do not explain rationale or implementation detai
 * `data/profile.md` — Profile schema and feature declaration semantics
 * `data/policy.md` — Policy schema and backend resolution rules
 * `data/state.md` — State schema, invariants, and commit rules
+* `data/sources.md` — Source registry schema and allow-list rules
 
 **API specs** — Interface contracts for pluggable components.
 
@@ -20,7 +21,7 @@ what invariants must hold. They do not explain rationale or implementation detai
 **Algorithm specs** — Input/output contracts for pure computation modules.
 
 * `algorithms/planner.md` — Planner phases, decision table, plan format
-* `algorithms/resolver.md` — Dependency resolution algorithm (draft)
+* `algorithms/resolver.md` — Dependency resolution algorithm
 
 ## Stability Expectations
 
@@ -35,5 +36,6 @@ but existing required operations must remain backward-compatible.
 1. `data/state.md` — understand the authority model first
 2. `data/profile.md` — understand input declaration
 3. `data/policy.md` — understand backend selection
-4. `algorithms/planner.md` — understand how decisions are made
-5. `api/backend.md` — understand the execution adapter contract
+4. `data/sources.md` — understand source admission and lookup
+5. `algorithms/planner.md` — understand how decisions are made
+6. `api/backend.md` — understand the execution adapter contract

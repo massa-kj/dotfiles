@@ -21,8 +21,14 @@ It does not install features. Run `apply` after bootstrap to install your enviro
 
 ## Profiles
 
-Profiles live in `profiles/`. Each profile declares which features should be present
-and (optionally) which version.
+See [profiles default location](../specs/data/profile.md#File-Location).
+
+Each profile declares which features should be present and (optionally) which version.
+
+Feature keys may be written as either:
+
+* bare names such as `git` → normalized to `core/git`
+* canonical IDs such as `user/myfeat`, `community/node`
 
 ```yaml
 # profiles/linux.yaml
@@ -36,6 +42,41 @@ features:
 Edit your profile to add or remove features, or change versions.
 
 See `specs/data/profile.md` for the full schema.
+
+## Sources
+
+See [source registry file default location](../specs/data/sources.md#File-Location).
+
+Example:
+
+```yaml
+sources:
+  - id: community
+    type: git
+    url: https://github.com/example/community-dotfiles
+    commit: 0123456
+    allow:
+      features:
+        - node
+      backends:
+        - npm
+```
+
+Place source content at:
+
+* user features/backends: config home `features/`, `backends/`
+* external features/backends: data home `sources/<id>/features/`, `backends/`
+
+There is no implicit fallback across `core`, `user`, and external sources.
+If you want a non-core source, reference it explicitly in the profile or policy.
+
+## Policies
+
+See [policies default location](../specs/data/policy.md#File-Location).
+
+## State
+
+See [state file default location](../specs/data/state.md#File-Location).
 
 ## Plan Command
 
@@ -73,11 +114,15 @@ The feature will be uninstalled and reinstalled at the new version.
 ## Troubleshooting
 
 **Feature is blocked in plan output**
-The feature has an unknown resource kind in state. Check `state/state.json` for the affected feature.
+The feature has an unknown resource kind in state. Check the authoritative state file under your platform state directory for the affected feature.
 
 **Dependency not found in profile**
 A feature declares `requires` for a capability that no current feature provides.
 Add the provider feature (e.g. `brew`, `mise`) to your profile.
+
+**External feature or backend is rejected**
+The source exists on disk but is not allowed by `sources.yaml`.
+Add it to the relevant `allow.features` or `allow.backends` entry, or use `allow: "*"` if you intend to trust the entire source.
 
 **State is corrupt**
 If `apply` aborts with a state invariant error, do not modify state manually.

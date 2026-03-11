@@ -18,6 +18,7 @@ Target modules:
 * `core/lib/planner` — classification, decision table
 * `core/lib/state` — schema validation, invariants, atomic commit
 * `core/lib/resolver` — topological sort, cycle detection, capability injection
+* `core/lib/source_registry` — canonical ID parsing, source path resolution, allow-list checks
 
 Internal APIs must NOT be tested directly.
 Tests must validate behavior, not implementation details.
@@ -36,6 +37,8 @@ Scenarios to cover:
 
 Test location: `tests/`
 
+Tests that exercise path resolution must isolate XDG/AppData roots instead of modifying shared user paths.
+
 ## Environment Tests
 
 | Environment | Description |
@@ -43,6 +46,21 @@ Test location: `tests/`
 | [Environment](../../tests/environment/README.md) | Full apply execution in isolated environments (Docker, Windows Sandbox) |
 | [Linux (Docker)](../../tests/environment/linux/docker/README.md) | Full apply execution in a fresh Ubuntu container |
 | [Windows (Sandbox)](../../tests/environment/windows/README.md) | Full apply execution in a disposable Windows Sandbox instance |
+
+## Path Isolation Rules
+
+Tests must not rely on repository-local state/profile/policy paths as authoritative runtime paths.
+
+Use:
+
+* `XDG_CONFIG_HOME`
+* `XDG_STATE_HOME`
+* `XDG_DATA_HOME`
+
+to redirect runtime paths in Linux/WSL tests.
+On Windows tests, use disposable AppData/LocalAppData roots.
+
+`DOTFILES_STATE_FILE` and `DOTFILES_STATE_DIR` must not be reintroduced in tests.
 
 ## What Must NOT Be Tested
 

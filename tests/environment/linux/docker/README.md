@@ -33,6 +33,19 @@ State is the single source of truth.
 
 ## Test Scenarios
 
+### lifecycle.sh
+
+Verifies the common lifecycle in one pass:
+
+* base apply initializes valid state
+* full apply expands the installed set
+* second full apply is idempotent
+* base apply removes no-longer-desired features safely
+* empty apply removes all tracked resources safely
+
+This is the preferred scenario for `all`, because environment tests may use networked package managers.
+The narrower scenarios remain available for focused debugging.
+
 ### minimal.sh
 
 Verifies basic execution:
@@ -107,16 +120,16 @@ build time rather than at every `docker run`.
 
 This will:
 1. Build the bootstrapped image (`dotfiles-test`)
-2. Run idempotent scenario
-3. Run uninstall scenario
-4. Run version_install scenario
-5. Run version_mixed scenario
-6. Run version_upgrade scenario
+2. Run lifecycle scenario
+3. Run version_install scenario
+4. Run version_mixed scenario
+5. Run version_upgrade scenario
 
 ### Run specific test
 
 ```bash
 ./tests/environment/linux/docker/test.sh minimal
+./tests/environment/linux/docker/test.sh lifecycle
 ./tests/environment/linux/docker/test.sh idempotent
 ./tests/environment/linux/docker/test.sh uninstall
 ./tests/environment/linux/docker/test.sh version-install
@@ -153,7 +166,7 @@ This will:
 `shell` is useful for:
 - Testing apply command: `./dotfiles apply profiles/linux.yaml`
 - Running a scenario manually: `./tests/environment/linux/docker/scenarios/minimal.sh`
-- Inspecting state: `cat state/state.json`
+- Inspecting state: `cat /tmp/dotfiles-xdg-state/dotfiles/state.json`
 
 `base-shell` is useful for:
 - Debugging bootstrap itself: `./platforms/linux/bootstrap.sh`
@@ -217,6 +230,7 @@ tests/environment/linux/docker/
 ├── README.md            # This file
 └── scenarios/           # Test scenarios (run against bootstrapped image)
     ├── minimal.sh       # Basic execution test
+    ├── lifecycle.sh     # Consolidated apply/uninstall lifecycle test
     ├── idempotent.sh    # Determinism test
     ├── uninstall.sh     # Safe removal test
     ├── version_install.sh   # Version specification test

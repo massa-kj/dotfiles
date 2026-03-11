@@ -32,6 +32,7 @@ Core must remain tool-agnostic and platform-insulated.
 No resource may be removed without state confirmation.
 Destructive operations require explicit intent, never implicit inference.
 Safety constraints are non-negotiable and cannot be bypassed by configuration.
+External sources are admitted only through explicit allow-lists; absent allow rules mean deny-by-default.
 
 ## Design Tradeoffs
 

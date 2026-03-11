@@ -33,12 +33,19 @@ features/<name>/
 
 No nested submodules. No cross-feature imports.
 
+The same layout is used for all source roots:
+
+* built-in: `{repo}/features/<name>/`
+* user: config home `features/<name>/`
+* external: data home `sources/<source_id>/features/<name>/`
+
 ## meta.yaml
 
 ```yaml
 description: Brief description
 depends:
   - git                    # explicit feature dependency
+  - core/bash              # explicit cross-source dependency
 requires:
   - name: package_manager  # capability-based dependency
 provides:
@@ -50,6 +57,12 @@ No version constraints, no conditional logic, no commands.
 
 For platform-specific deps, use `meta.linux.yaml` / `meta.wsl.yaml` / `meta.windows.yaml`.
 These are merged with `meta.yaml` during resolution.
+
+`depends` normalization rules:
+
+* bare dependency name means same-source dependency
+* cross-source dependency must use an explicit canonical ID
+* do not rely on source search order or fallback
 
 **Choosing `depends` vs `requires`:**
 
@@ -129,6 +142,7 @@ Avoid:
 
 The feature name becomes part of state identity.
 Renaming a feature is a breaking change requiring state migration.
+Moving a feature between sources also changes its canonical ID and is therefore a breaking change.
 
 ## Feature Evolution
 
