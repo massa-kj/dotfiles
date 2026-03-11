@@ -38,9 +38,10 @@ Run Docker-based integration tests for dotfiles.
 Commands:
   build              Build bootstrapped test image (default for scenarios)
   build-base         Build base image only (for bootstrap testing)
-  minimal            Run minimal scenario
-  idempotent         Run idempotent scenario
-  uninstall          Run uninstall scenario
+  lifecycle          Run consolidated lifecycle scenario
+  minimal            Run minimal scenario (debug)
+  idempotent         Run idempotent scenario (debug)
+  uninstall          Run uninstall scenario (debug)
   version-install    Run version install scenario
   version-upgrade    Run version upgrade scenario
   version-mixed      Run version mixed scenario
@@ -142,6 +143,10 @@ case "$COMMAND" in
         build_image
         run_scenario "minimal"
         ;;
+    lifecycle)
+        build_image
+        run_scenario "lifecycle"
+        ;;
     idempotent)
         build_image
         run_scenario "idempotent"
@@ -164,9 +169,7 @@ case "$COMMAND" in
         ;;
     all)
         build_image
-        # run_scenario "minimal"
-        run_scenario "idempotent"
-        run_scenario "uninstall"
+        run_scenario "lifecycle"
         run_scenario "version_install"
         run_scenario "version_upgrade"
         run_scenario "version_mixed"
