@@ -348,13 +348,13 @@ orchestrator_apply() {
     local -a _apply_sorted
     resolve_dependencies _apply_valid_features _apply_sorted || return 1
 
-    # Compile DesiredResourceGraph (used by planner in Phase 3)
+    # Compile DesiredResourceGraph (profile version hints embedded for runtime resources)
     local _apply_drg
-    _apply_drg=$(feature_compiler_run "$_apply_index" _apply_sorted) || return 1
+    _apply_drg=$(feature_compiler_run "$_apply_index" _apply_sorted "$profile_file") || return 1
 
     # Plan: pure computation of what needs to happen
     local plan_json
-    plan_json=$(planner_run "$profile_file" _apply_sorted) || return 1
+    plan_json=$(planner_run "$_apply_drg" _apply_sorted) || return 1
 
     # Inject spec_version-blocked features into plan output
     plan_json=$(_plan_inject_blocked "$plan_json" "$_apply_sv_blocked")

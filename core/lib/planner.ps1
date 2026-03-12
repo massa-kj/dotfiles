@@ -2,157 +2,265 @@
 # Module: planner (PowerShell)
 #
 # Responsibility:
-#   PURE decision engine. Converts (profile, state, policy) into a structured
-#   plan object. Never executes, never modifies state.
+#   PURE decision engine. Converts (desired_resource_graph, state) into a
+#   structured plan object describing what the executor should do.
+#   Never executes anything.
 #
 # Public API:
-#   Invoke-PlannerRun <ProfileFile> <SortedFeatures>  → plan JSON string
+#   Invoke-PlannerRun <DrgJson> <SortedFeatures>  → plan JSON string
 #
-# See bash planner.sh for full design notes.
+# Internal phases (each PURE function):
+#   _Planner-Diff       drg × state → diff array
+#   _Planner-Classify   diff array  → classified array
+#   _Planner-Decide     classified  → plan PSCustomObject
+#
+# Inputs:
+#   DrgJson        — DesiredResourceGraph JSON (produced by FeatureCompiler)
+#   SortedFeatures — topologically sorted canonical feature IDs
+#   State-*        — public state API (read-only)
+#
+# Planner must NOT receive profile or policy directly.
+# Backend resolution (desired_backend per resource) is already in DrgJson.
+#
+# Plan JSON schema:
+#   {
+#     "actions": [
+#       {"feature": "core/git",   "operation": "create",   "details": {}},
+#       {"feature": "core/node",  "operation": "replace",  "details": {}},
+#       {"feature": "core/tmux",  "operation": "strengthen",
+#        "details": {"add_resources": [{"kind": "fs", "id": "fs:tmux.conf"}]}}
+#     ],
+#     "noops":   [{"feature": "core/bash"}],
+#     "blocked": [{"feature": "user/legacy", "reason": "unknown resource kind: registry"}],
+#     "summary": {"create":1, "destroy":0, "replace":1, "replace_backend":0,
+#                 "strengthen":1, "noop":1, "blocked":0}
+#   }
+#
+# Classification table:
+#   in_desired=false, in_state=true                              → destroy
+#   in_desired=true,  in_state=false                             → create
+#   in_desired=true,  in_state=true, desired_resources empty     → noop  (script feature)
+#   in_desired=true,  in_state=true, incompatible resource change → replace
+#   in_desired=true,  in_state=true, backend mismatch only       → replace_backend
+#   in_desired=true,  in_state=true, strict superset + compat    → strengthen
+#   in_desired=true,  in_state=true, identical resources         → noop
+#   unknown resource kind in desired or state                    → blocked
 # -----------------------------------------------------------------------------
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-# This module uses public state functions (State-*) as READ-ONLY inputs.
-
-# Valid resource kinds. Anything else causes a "blocked" classification.
+# Valid resource kinds.  Anything else causes a "blocked" classification.
 $script:PlannerValidKinds = @("package", "runtime", "fs")
 
-# ── Profile helpers ───────────────────────────────────────────────────────────
+# ── Semantic key helpers ──────────────────────────────────────────────────────
 
-function _Planner-ProfileVersion {
-    <#
-    .SYNOPSIS Extract .features.<feature>.version from a profile YAML string.
-    Returns $null if not set.
-    #>
-    param([string]$ProfileData, [string]$Feature)
+# _Planner-DesiredSemanticKey <Res>
+# Returns a stable semantic key for a desired resource (from DRG):
+#   package → "pkg:<name>"
+#   runtime → "rt:<name>"
+#   fs      → "fs:<basename(target or path)>"
+function _Planner-DesiredSemanticKey {
+    param([Parameter(Mandatory=$true)] [object]$Res)
 
-    # Strip source prefix; profile YAML uses bare names as keys
-    $featName = if ($Feature -match '/') { $Feature -replace '^[^/]+/', '' } else { $Feature }
-
-    try {
-        $val = $ProfileData | & yq eval ".features[\"${featName}\"].version // `"`"" - 2>$null
-        if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace($val)) {
-            return $val
+    $kind = $Res.PSObject.Properties['kind']?.Value
+    switch ($kind) {
+        "package" { return "pkg:" + ($Res.PSObject.Properties['name']?.Value ?? "?") }
+        "runtime" { return "rt:"  + ($Res.PSObject.Properties['name']?.Value ?? "?") }
+        "fs" {
+            $target = $Res.PSObject.Properties['target']?.Value
+            $path   = $Res.PSObject.Properties['path']?.Value
+            $p      = if ($target) { $target } elseif ($path) { $path } else { "" }
+            return "fs:" + [System.IO.Path]::GetFileName($p)
         }
-    } catch { }
-    return $null
-}
-
-# ── State helpers (read-only via public API) ──────────────────────────────────
-
-function _Planner-StateRuntimeVersion {
-    <#
-    .SYNOPSIS Get the runtime resource version for a feature from state. Returns $null if none.
-    Note: Phase 4 state stores version at .runtime.version (nested).
-    Legacy Phase 3 state stores version at .version (top-level). Both are checked.
-    #>
-    param([string]$Feature)
-
-    $resources = @(State-QueryResources -Feature $Feature)
-    $rt = $resources | Where-Object { $_.kind -eq "runtime" } | Select-Object -First 1
-    if ($rt) {
-        # Phase 4: nested .runtime.version
-        if ($rt.PSObject.Properties['runtime'] -and $rt.runtime -and
-            $rt.runtime.PSObject.Properties['version'] -and $rt.runtime.version) {
-            return [string]$rt.runtime.version
-        }
-        # Phase 3 compat: top-level .version
-        if ($rt.PSObject.Properties['version'] -and $rt.version) {
-            return [string]$rt.version
-        }
+        default { return "other:$kind" }
     }
-    return $null
 }
+
+# _Planner-StateSemanticKey <Res>
+# Returns a stable semantic key for a state resource:
+#   package → "pkg:<package.name>"
+#   runtime → "rt:<runtime.name>"
+#   fs      → "fs:<basename(fs.path)>"
+function _Planner-StateSemanticKey {
+    param([Parameter(Mandatory=$true)] [object]$Res)
+
+    $kind = $Res.PSObject.Properties['kind']?.Value
+    switch ($kind) {
+        "package" {
+            $pkg  = $Res.PSObject.Properties['package']?.Value
+            $name = if ($pkg) { $pkg.PSObject.Properties['name']?.Value } else { $null }
+            return "pkg:" + ($name ?? "?")
+        }
+        "runtime" {
+            $rt   = $Res.PSObject.Properties['runtime']?.Value
+            $name = if ($rt) { $rt.PSObject.Properties['name']?.Value } else { $null }
+            return "rt:" + ($name ?? "?")
+        }
+        "fs" {
+            $fs = $Res.PSObject.Properties['fs']?.Value
+            $p  = if ($fs) { $fs.PSObject.Properties['path']?.Value ?? "" } else { "" }
+            return "fs:" + [System.IO.Path]::GetFileName($p)
+        }
+        default { return "other:$kind" }
+    }
+}
+
+# _Planner-CheckResourceCompat <DesiredRes> <StateRes>
+# Compare one desired resource against its matched state resource.
+# Returns one of: "compatible", "backend_mismatch", "version_mismatch", "incompatible".
+function _Planner-CheckResourceCompat {
+    param(
+        [Parameter(Mandatory=$true)] [object]$DesiredRes,
+        [Parameter(Mandatory=$true)] [object]$StateRes
+    )
+
+    $kind = $DesiredRes.PSObject.Properties['kind']?.Value
+    switch ($kind) {
+        "package" {
+            $dBackend = $DesiredRes.PSObject.Properties['desired_backend']?.Value ?? "?"
+            $sBackend = $StateRes.PSObject.Properties['backend']?.Value            ?? "?"
+            if ($dBackend -ne $sBackend) { return "backend_mismatch" }
+            return "compatible"
+        }
+        "runtime" {
+            $dBackend = $DesiredRes.PSObject.Properties['desired_backend']?.Value ?? "?"
+            $sBackend = $StateRes.PSObject.Properties['backend']?.Value            ?? "?"
+            if ($dBackend -ne $sBackend) { return "backend_mismatch" }
+
+            $dVer = $DesiredRes.PSObject.Properties['version']?.Value
+            if ($dVer -and $dVer -ne "") {
+                $rt   = $StateRes.PSObject.Properties['runtime']?.Value
+                $sVer = if ($rt) { $rt.PSObject.Properties['version']?.Value } else { $null }
+                if ($dVer -ne ($sVer ?? "")) { return "version_mismatch" }
+            }
+            return "compatible"
+        }
+        "fs" {
+            $dTarget = $DesiredRes.PSObject.Properties['target']?.Value ?? `
+                       $DesiredRes.PSObject.Properties['path']?.Value   ?? ""
+            $fs    = $StateRes.PSObject.Properties['fs']?.Value
+            $sPath = if ($fs) { $fs.PSObject.Properties['path']?.Value ?? "" } else { "" }
+            if ($dTarget -ne $sPath) { return "incompatible" }
+
+            $dEt = $DesiredRes.PSObject.Properties['entry_type']?.Value
+            if ($dEt -and $dEt -ne "") {
+                $sEt = if ($fs) { $fs.PSObject.Properties['entry_type']?.Value } else { $null }
+                if ($dEt -ne ($sEt ?? "")) { return "incompatible" }
+            }
+
+            $dOp = $DesiredRes.PSObject.Properties['op']?.Value ?? "link"
+            $sOp = if ($fs) { $fs.PSObject.Properties['op']?.Value ?? "link" } else { "link" }
+            if ($dOp -ne $sOp) { return "incompatible" }
+
+            return "compatible"
+        }
+        default { return "compatible" }
+    }
+}
+
+# ── State helpers (read-only) ─────────────────────────────────────────────────
 
 function _Planner-StateHasUnknownKind {
-    <#
-    .SYNOPSIS Return $true if the feature has any resource with an unrecognised kind.
-    #>
     param([string]$Feature)
-
     $resources = @(State-QueryResources -Feature $Feature)
     foreach ($r in $resources) {
-        if ($r.kind -notin $script:PlannerValidKinds) { return $true }
+        if ($r.PSObject.Properties['kind']?.Value -notin $script:PlannerValidKinds) { return $true }
     }
     return $false
 }
 
 function _Planner-StateUnknownKindsList {
-    <#
-    .SYNOPSIS Return a comma-separated list of unrecognised resource kinds.
-    #>
     param([string]$Feature)
-
     $resources = @(State-QueryResources -Feature $Feature)
-    $unknown = $resources | Where-Object { $_.kind -notin $script:PlannerValidKinds } |
-        Select-Object -ExpandProperty kind | Sort-Object -Unique
+    $unknown   = @($resources | Where-Object {
+        $_.PSObject.Properties['kind']?.Value -notin $script:PlannerValidKinds
+    } | Select-Object -ExpandProperty kind | Sort-Object -Unique)
     return ($unknown -join ", ")
 }
 
 # ── Phase 1: Diff ─────────────────────────────────────────────────────────────
 
+# _Planner-Diff <DrgJson> <SortedFeatures>
+# Compare desired features (DRG) against current state.
+# Returns an array of diff objects.
 function _Planner-Diff {
-    <#
-    .SYNOPSIS Compare desired features (profile) against current state.
-    Returns an array of diff objects.
-    #>
-    param([string]$ProfileData, [string[]]$SortedFeatures)
+    param(
+        [Parameter(Mandatory=$true)] [string]   $DrgJson,
+        [Parameter(Mandatory=$true)] [string[]] $SortedFeatures
+    )
 
+    $drg  = $DrgJson | ConvertFrom-Json
     $diff = @()
 
-    # Desired features in sorted dependency order
+    # ── Desired features in sorted dependency order ──
     foreach ($feature in $SortedFeatures) {
-        $inState          = State-HasFeature -Feature $feature
-        $versionDesired   = _Planner-ProfileVersion -ProfileData $ProfileData -Feature $feature
-        $versionInstalled = $null
-        $hasBlocked       = $false
-        $blockedReason    = $null
+        $inState = State-HasFeature -Feature $feature
 
+        # Extract desired resources from DRG
+        $drgFeature       = $drg.features.PSObject.Properties[$feature]?.Value
+        $desiredResources = @()
+        if ($drgFeature -and $drgFeature.PSObject.Properties['resources']?.Value) {
+            $desiredResources = @($drgFeature.resources)
+        }
+        $desiredCount = $desiredResources.Count
+
+        # Extract state resources
+        $stateResources = @()
         if ($inState) {
-            $rv = _Planner-StateRuntimeVersion -Feature $feature
-            if ($rv) { $versionInstalled = $rv }
+            $stateResources = @(State-QueryResources -Feature $feature)
+        }
 
-            if (_Planner-StateHasUnknownKind -Feature $feature) {
+        # Check for unknown resource kinds
+        $hasBlocked    = $false
+        $blockedReason = $null
+
+        $unkDesired = @($desiredResources | Where-Object {
+            $_.PSObject.Properties['kind']?.Value -notin $script:PlannerValidKinds
+        })
+        if ($unkDesired.Count -gt 0) {
+            $kinds         = ($unkDesired | ForEach-Object { $_.PSObject.Properties['kind']?.Value } | Sort-Object -Unique) -join ", "
+            $hasBlocked    = $true
+            $blockedReason = "unknown resource kind: $kinds"
+        }
+
+        if ($inState -and (-not $hasBlocked)) {
+            $unkState = @($stateResources | Where-Object {
+                $_.PSObject.Properties['kind']?.Value -notin $script:PlannerValidKinds
+            })
+            if ($unkState.Count -gt 0) {
+                $kinds         = ($unkState | ForEach-Object { $_.PSObject.Properties['kind']?.Value } | Sort-Object -Unique) -join ", "
                 $hasBlocked    = $true
-                $kinds         = _Planner-StateUnknownKindsList -Feature $feature
-                $blockedReason = "unknown resource kind: $kinds"
+                $blockedReason = "unknown resource kind in state: $kinds"
             }
         }
 
         $diff += [PSCustomObject]@{
-            feature               = $feature
-            in_profile            = $true
-            in_state              = $inState
-            version_desired       = $versionDesired
-            version_installed     = $versionInstalled
-            has_blocked_resources = $hasBlocked
-            blocked_reason        = $blockedReason
+            feature                = $feature
+            in_desired             = $true
+            in_state               = $inState
+            desired_resource_count = $desiredCount
+            desired_resources      = $desiredResources
+            state_resources        = $stateResources
+            has_blocked_resources  = $hasBlocked
+            blocked_reason         = $blockedReason
         }
     }
 
-    # Installed features not in profile (candidates for destroy)
+    # ── Installed features not in desired (candidates for destroy) ──
     $installedFeatures = @(State-ListFeatures)
     foreach ($installedFeat in $installedFeatures) {
-        # Skip features that are in the desired set (v3 state uses canonical IDs).
-        $covered = $false
-        foreach ($sf in $SortedFeatures) {
-            if ($installedFeat -eq $sf) {
-                $covered = $true
-                break
-            }
-        }
-        if ($covered) { continue }
+        if ($SortedFeatures -contains $installedFeat) { continue }
 
         $diff += [PSCustomObject]@{
-            feature               = $installedFeat
-            in_profile            = $false
-            in_state              = $true
-            version_desired       = $null
-            version_installed     = $null
-            has_blocked_resources = $false
-            blocked_reason        = $null
+            feature                = $installedFeat
+            in_desired             = $false
+            in_state               = $true
+            desired_resource_count = 0
+            desired_resources      = @()
+            state_resources        = @()
+            has_blocked_resources  = $false
+            blocked_reason         = $null
         }
     }
 
@@ -161,12 +269,11 @@ function _Planner-Diff {
 
 # ── Phase 2: Classification ───────────────────────────────────────────────────
 
+# _Planner-Classify <Diff>
+# Apply the decision table to each diff entry.
+# Returns an array of classified objects.
 function _Planner-Classify {
-    <#
-    .SYNOPSIS Apply the decision table to each diff entry.
-    Returns an array of classified objects.
-    #>
-    param([object[]]$Diff)
+    param([Parameter(Mandatory=$true)] [object[]] $Diff)
 
     $classified = @()
 
@@ -175,35 +282,95 @@ function _Planner-Classify {
             $classified += [PSCustomObject]@{
                 feature        = $entry.feature
                 classification = "blocked"
-                reason         = ($entry.blocked_reason ?? "unknown resource kind in state")
+                reason         = ($entry.blocked_reason ?? "unknown resource kind")
             }
-        } elseif ($entry.in_profile -and (-not $entry.in_state)) {
+
+        } elseif ($entry.in_desired -and (-not $entry.in_state)) {
             $classified += [PSCustomObject]@{
-                feature         = $entry.feature
-                classification  = "create"
-                desired_version = $entry.version_desired
+                feature        = $entry.feature
+                classification = "create"
             }
-        } elseif ((-not $entry.in_profile) -and $entry.in_state) {
+
+        } elseif ((-not $entry.in_desired) -and $entry.in_state) {
             $classified += [PSCustomObject]@{
                 feature        = $entry.feature
                 classification = "destroy"
             }
-        } elseif ($entry.in_profile -and $entry.in_state) {
-            if ($entry.version_desired -and $entry.version_desired -ne $entry.version_installed) {
-                $classified += [PSCustomObject]@{
-                    feature        = $entry.feature
-                    classification = "replace"
-                    from_version   = $entry.version_installed
-                    to_version     = $entry.version_desired
-                }
-            } else {
+
+        } elseif ($entry.in_desired -and $entry.in_state) {
+
+            if ($entry.desired_resource_count -eq 0) {
+                # Script feature: classify by presence only
                 $classified += [PSCustomObject]@{
                     feature        = $entry.feature
                     classification = "noop"
                 }
+            } else {
+                # Build semantic key maps
+                $dKeyed = @{}
+                foreach ($r in @($entry.desired_resources)) {
+                    $key = _Planner-DesiredSemanticKey -Res $r
+                    $dKeyed[$key] = $r
+                }
+                $sKeyed = @{}
+                foreach ($r in @($entry.state_resources)) {
+                    $key = _Planner-StateSemanticKey -Res $r
+                    $sKeyed[$key] = $r
+                }
+
+                $dKeys = @($dKeyed.Keys)
+                $sKeys = @($sKeyed.Keys)
+
+                # Set operations
+                $common = @($dKeys | Where-Object { $sKeys -contains $_ })
+                $dOnly  = @($dKeys | Where-Object { $sKeys -notcontains $_ })
+                $sOnly  = @($sKeys | Where-Object { $dKeys -notcontains $_ })
+
+                # Compatibility of common resources
+                $hasInc = $false   # has incompatible (non-backend) change
+                $hasBm  = $false   # has backend mismatch only
+
+                foreach ($k in $common) {
+                    $compat = _Planner-CheckResourceCompat -DesiredRes $dKeyed[$k] -StateRes $sKeyed[$k]
+                    if     ($compat -eq "backend_mismatch") { $hasBm  = $true }
+                    elseif ($compat -ne "compatible")       { $hasInc = $true }
+                }
+
+                if ($hasInc -or $sOnly.Count -gt 0) {
+                    # Incompatible mutation or state has resources removed from desired
+                    $classified += [PSCustomObject]@{
+                        feature        = $entry.feature
+                        classification = "replace"
+                    }
+                } elseif ($hasBm) {
+                    $classified += [PSCustomObject]@{
+                        feature        = $entry.feature
+                        classification = "replace_backend"
+                    }
+                } elseif ($dOnly.Count -gt 0) {
+                    # All state resources present in desired, all common compatible, desired has extras
+                    $addResources = @($dOnly | ForEach-Object {
+                        $r = $dKeyed[$_]
+                        [PSCustomObject]@{
+                            kind = $r.PSObject.Properties['kind']?.Value
+                            id   = $r.PSObject.Properties['id']?.Value ?? $r.PSObject.Properties['kind']?.Value
+                        }
+                    })
+                    $classified += [PSCustomObject]@{
+                        feature        = $entry.feature
+                        classification = "strengthen"
+                        add_resources  = $addResources
+                    }
+                } else {
+                    $classified += [PSCustomObject]@{
+                        feature        = $entry.feature
+                        classification = "noop"
+                    }
+                }
             }
+
         } else {
-            # Unreachable, but table must be total
+            # Unreachable, but the table must be total
             $classified += [PSCustomObject]@{
                 feature        = $entry.feature
                 classification = "noop"
@@ -216,63 +383,42 @@ function _Planner-Classify {
 
 # ── Phase 3: Decision ─────────────────────────────────────────────────────────
 
+# _Planner-Decide <Classified>
+# Apply ordering rules and produce the final plan object.
+# Ordering: destroy (reversed) → replace → replace_backend → strengthen → create
 function _Planner-Decide {
-    <#
-    .SYNOPSIS Apply ordering rules and produce the final plan object.
-    Ordering (PLANNER_SPEC §6): destroy (reversed) → replace → create.
-    Returns a PSCustomObject that can be serialised to JSON.
-    #>
-    param([object[]]$Classified)
+    param([Parameter(Mandatory=$true)] [object[]] $Classified)
 
-    $destroys  = @($Classified | Where-Object { $_.classification -eq "destroy"  })
-    $replaces  = @($Classified | Where-Object { $_.classification -eq "replace"  })
-    $creates   = @($Classified | Where-Object { $_.classification -eq "create"   })
-    $blocked   = @($Classified | Where-Object { $_.classification -eq "blocked"  })
-    $noops     = @($Classified | Where-Object { $_.classification -eq "noop"     })
+    $destroys        = @($Classified | Where-Object { $_.classification -eq "destroy"         })
+    $replaces        = @($Classified | Where-Object { $_.classification -eq "replace"         })
+    $replaceBackends = @($Classified | Where-Object { $_.classification -eq "replace_backend" })
+    $strengthens     = @($Classified | Where-Object { $_.classification -eq "strengthen"      })
+    $creates         = @($Classified | Where-Object { $_.classification -eq "create"          })
+    $blocked         = @($Classified | Where-Object { $_.classification -eq "blocked"         })
+    $noops           = @($Classified | Where-Object { $_.classification -eq "noop"            })
 
-    # Reverse destroy order
+    # Reverse destroy order (uninstall in reverse dependency order)
     [array]::Reverse($destroys)
 
     $actions = @()
 
-    foreach ($d in $destroys) {
+    foreach ($d  in $destroys)        { $actions += [PSCustomObject]@{ feature = $d.feature;  operation = "destroy";         details = [PSCustomObject]@{} } }
+    foreach ($r  in $replaces)        { $actions += [PSCustomObject]@{ feature = $r.feature;  operation = "replace";         details = [PSCustomObject]@{} } }
+    foreach ($rb in $replaceBackends) { $actions += [PSCustomObject]@{ feature = $rb.feature; operation = "replace_backend"; details = [PSCustomObject]@{} } }
+    foreach ($s  in $strengthens) {
+        $addRes = if ($s.PSObject.Properties['add_resources']?.Value) { @($s.add_resources) } else { @() }
         $actions += [PSCustomObject]@{
-            feature   = $d.feature
-            operation = "destroy"
-            details   = [PSCustomObject]@{}
+            feature   = $s.feature
+            operation = "strengthen"
+            details   = [PSCustomObject]@{ add_resources = $addRes }
         }
     }
-    foreach ($r in $replaces) {
-        $actions += [PSCustomObject]@{
-            feature   = $r.feature
-            operation = "replace"
-            details   = [PSCustomObject]@{
-                from_version   = $r.from_version
-                to_version     = $r.to_version
-                config_version = $r.to_version
-            }
-        }
-    }
-    foreach ($c in $creates) {
-        $actions += [PSCustomObject]@{
-            feature   = $c.feature
-            operation = "create"
-            details   = [PSCustomObject]@{
-                config_version = $c.desired_version
-            }
-        }
-    }
+    foreach ($c  in $creates)         { $actions += [PSCustomObject]@{ feature = $c.feature;  operation = "create";          details = [PSCustomObject]@{} } }
 
     $blockedList = @($blocked | ForEach-Object {
-        [PSCustomObject]@{
-            feature = $_.feature
-            reason  = ($_.reason ?? "unknown resource kind in state")
-        }
+        [PSCustomObject]@{ feature = $_.feature; reason = ($_.reason ?? "unknown resource kind") }
     })
-
-    $noopList = @($noops | ForEach-Object {
-        [PSCustomObject]@{ feature = $_.feature }
-    })
+    $noopList = @($noops | ForEach-Object { [PSCustomObject]@{ feature = $_.feature } })
 
     return [PSCustomObject]@{
         actions = $actions
@@ -282,8 +428,8 @@ function _Planner-Decide {
             create          = $creates.Count
             destroy         = $destroys.Count
             replace         = $replaces.Count
-            replace_backend = 0
-            strengthen      = 0
+            replace_backend = $replaceBackends.Count
+            strengthen      = $strengthens.Count
             noop            = $noops.Count
             blocked         = $blocked.Count
         }
@@ -292,27 +438,25 @@ function _Planner-Decide {
 
 # ── Public API ────────────────────────────────────────────────────────────────
 
+# Invoke-PlannerRun <DrgJson> <SortedFeatures>
+# Full planning pipeline: diff → classify → decide.
+# Returns the plan as a JSON string, or throws on error.
+#
+# Reads state via State-HasFeature / State-ListFeatures / State-QueryResources (read-only).
 function Invoke-PlannerRun {
-    <#
-    .SYNOPSIS Full planning pipeline: diff → classify → decide.
-    Returns the plan as a JSON string.
-    Reads $script:StateData via public State-* functions (read-only).
-    #>
     param(
-        [Parameter(Mandatory=$true)] [string]$ProfileFile,
-        [Parameter(Mandatory=$true)] [string[]]$SortedFeatures
+        [Parameter(Mandatory=$true)] [string]   $DrgJson,
+        [Parameter(Mandatory=$true)] [string[]] $SortedFeatures
     )
 
-    if (-not (Test-Path $ProfileFile)) {
-        Log-Error "Invoke-PlannerRun: profile file not found: $ProfileFile"
-        throw "Profile not found: $ProfileFile"
+    if ([string]::IsNullOrWhiteSpace($DrgJson)) {
+        Log-Error "Invoke-PlannerRun: DrgJson is required"
+        throw "Invoke-PlannerRun: DrgJson is required"
     }
 
-    $profileData = Get-Content $ProfileFile -Raw
-
-    $diff        = _Planner-Diff       -ProfileData $profileData -SortedFeatures $SortedFeatures
-    $classified  = _Planner-Classify   -Diff $diff
-    $plan        = _Planner-Decide     -Classified $classified
+    $diff       = _Planner-Diff     -DrgJson $DrgJson -SortedFeatures $SortedFeatures
+    $classified = _Planner-Classify -Diff $diff
+    $plan       = _Planner-Decide   -Classified $classified
 
     return ($plan | ConvertTo-Json -Depth 10 -Compress:$false)
 }

@@ -105,28 +105,32 @@ function Format-Plan {
     foreach ($action in $plan.actions) {
         switch ($action.operation) {
             "destroy" {
-                Write-Host ("  {0,-9} {1}" -f "destroy", $action.feature) -ForegroundColor Red
+                Write-Host ("  {0,-16} {1}" -f "destroy", $action.feature) -ForegroundColor Red
                 $hasOutput = $true
             }
             "replace" {
                 $from = if ($action.details.from_version) { $action.details.from_version } else { "" }
                 $to   = if ($action.details.to_version)   { $action.details.to_version   } else { "" }
                 if ($from -and $to) {
-                    Write-Host ("  {0,-9} {1,-20} {2} → {3}" -f "replace", $action.feature, $from, $to) `
+                    Write-Host ("  {0,-16} {1,-20} {2} → {3}" -f "replace", $action.feature, $from, $to) `
                         -ForegroundColor Yellow
                 } else {
-                    Write-Host ("  {0,-9} {1}" -f "replace", $action.feature) -ForegroundColor Yellow
+                    Write-Host ("  {0,-16} {1}" -f "replace", $action.feature) -ForegroundColor Yellow
                 }
                 $hasOutput = $true
             }
+            "replace_backend" {
+                Write-Host ("  {0,-16} {1}" -f "replace_backend", $action.feature) -ForegroundColor Yellow
+                $hasOutput = $true
+            }
+            "strengthen" {
+                $addCount = if ($action.details.add_resources) { @($action.details.add_resources).Count } else { 0 }
+                Write-Host ("  {0,-16} {1,-20} (+{2} resource(s))" -f "strengthen", $action.feature, $addCount) `
+                    -ForegroundColor Cyan
+                $hasOutput = $true
+            }
             "create" {
-                $ver = if ($action.details.config_version) { $action.details.config_version } else { "" }
-                if ($ver) {
-                    Write-Host ("  {0,-9} {1,-20} {2}" -f "create", $action.feature, $ver) `
-                        -ForegroundColor Green
-                } else {
-                    Write-Host ("  {0,-9} {1}" -f "create", $action.feature) -ForegroundColor Green
-                }
+                Write-Host ("  {0,-16} {1}" -f "create", $action.feature) -ForegroundColor Green
                 $hasOutput = $true
             }
         }
@@ -135,14 +139,14 @@ function Format-Plan {
     # Print blocked entries
     foreach ($item in $plan.blocked) {
         $reason = if ($item.reason) { $item.reason } else { "" }
-        Write-Host ("  {0,-9} {1,-20} {2}" -f "blocked", $item.feature, $reason) -ForegroundColor Red
+        Write-Host ("  {0,-16} {1,-20} {2}" -f "blocked", $item.feature, $reason) -ForegroundColor Red
         $hasOutput = $true
     }
 
     # Print noop entries when --verbose
     if ($ShowNoop) {
         foreach ($item in $plan.noops) {
-            Write-Host ("  {0,-9} {1}" -f "noop", $item.feature) -ForegroundColor DarkGray
+            Write-Host ("  {0,-16} {1}" -f "noop", $item.feature) -ForegroundColor DarkGray
             $hasOutput = $true
         }
     }
@@ -150,12 +154,13 @@ function Format-Plan {
     if ($hasOutput) { Write-Host "" }
 
     $s = $plan.summary
-    Write-Host ("Summary: create={0}  destroy={1}  replace={2}  noop={3}  blocked={4}" -f `
-        $s.create, $s.destroy, $s.replace, $s.noop, $s.blocked) -ForegroundColor White
+    $strengthen = if ($s.PSObject.Properties['strengthen']?.Value) { $s.strengthen } else { 0 }
+    Write-Host ("Summary: create={0}  destroy={1}  replace={2}  strengthen={3}  noop={4}  blocked={5}" -f `
+        $s.create, $s.destroy, $s.replace, $strengthen, $s.noop, $s.blocked) -ForegroundColor White
     Write-Host ""
 
     $blockedCount = $s.blocked
-    $activeCount  = $s.create + $s.destroy + $s.replace
+    $activeCount  = $s.create + $s.destroy + $s.replace + $strengthen
 
     if ($blockedCount -gt 0) {
         Write-Host "$blockedCount blocked feature(s) — run 'apply' to see details." -ForegroundColor Red
@@ -200,8 +205,15 @@ if (-not (Read-FeatureMetadata -FeatureIndexJson $_planIndex -Features $_svResul
 $sortedFeatures = Resolve-Dependencies -DesiredFeatures $_svResult.Valid
 if ($null -eq $sortedFeatures) { exit 1 }
 
+# Compile DesiredResourceGraph (profile version hints embedded for runtime resources)
+$_planDrg = Invoke-FeatureCompilerRun -FeatureIndexJson $_planIndex -SortedFeatures $sortedFeatures -ProfileFile $ProfileFile
+if ($null -eq $_planDrg) {
+    Log-Error "Compiler failed to produce a DesiredResourceGraph"
+    exit 1
+}
+
 # Plan: pure computation — no state writes
-$planJson = Invoke-PlannerRun -ProfileFile $ProfileFile -SortedFeatures $sortedFeatures
+$planJson = Invoke-PlannerRun -DrgJson $_planDrg -SortedFeatures $sortedFeatures
 if (-not $planJson) {
     Log-Error "Planner failed to produce a plan"
     exit 1

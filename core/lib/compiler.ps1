@@ -50,13 +50,51 @@ function _Compiler-ResourceId {
             return "runtime:$name"
         }
         "fs" {
-            $path = $ResourceObj.PSObject.Properties['path']?.Value
-            return "fs:$(Split-Path $path -Leaf)"
+            $target = $ResourceObj.PSObject.Properties['target']?.Value
+            $path   = $ResourceObj.PSObject.Properties['path']?.Value
+            $p      = if ($target) { $target } elseif ($path) { $path } else { "unknown" }
+            return "fs:$([System.IO.Path]::GetFileName($p))"
         }
         default {
             return "${Kind}:unknown"
         }
     }
+}
+
+# _Compiler-ProfileVersion <ProfileFile> <CanonicalId>
+# Extract version hint for a feature from its profile YAML entry.
+# Tries the canonical ID key first, then falls back to the bare name.
+# Returns $null if not found or no version is set.
+function _Compiler-ProfileVersion {
+    param(
+        [Parameter(Mandatory=$true)] [string]$ProfileFile,
+        [Parameter(Mandatory=$true)] [string]$CanonicalId
+    )
+
+    try {
+        # Try canonical ID (e.g. "tools/node")
+        $val = Get-Content $ProfileFile -Raw |
+               & yq eval ".features[\"${CanonicalId}\"].version // \"\"" - 2>$null
+        if ($LASTEXITCODE -eq 0 -and
+            -not [string]::IsNullOrWhiteSpace($val) -and
+            $val -ne "null" -and $val -ne "") {
+            return $val
+        }
+
+        # Fallback: bare name (e.g. "node")
+        $bareName = if ($CanonicalId -match '/') { $CanonicalId -replace '^[^/]+/', '' } else { $CanonicalId }
+        if ($bareName -ne $CanonicalId) {
+            $val = Get-Content $ProfileFile -Raw |
+                   & yq eval ".features[\"${bareName}\"].version // \"\"" - 2>$null
+            if ($LASTEXITCODE -eq 0 -and
+                -not [string]::IsNullOrWhiteSpace($val) -and
+                $val -ne "null" -and $val -ne "") {
+                return $val
+            }
+        }
+    } catch { }
+
+    return $null
 }
 
 # _Compiler-ResolveResource <CanonicalId> <ResourceObj>
@@ -93,6 +131,14 @@ function _Compiler-ResolveResource {
             $backend = Resolve-BackendFor -Kind "runtime" -Name $name 2>$null
             if (-not $backend) { $backend = "unknown" }
             $updated['desired_backend'] = $backend
+
+            # Embed version hint from profile if available
+            $profileFile   = $script:CompilerProfileFile   ?? ""
+            $canonicalIdCtx = $script:CompilerCanonicalId  ?? ""
+            if ($profileFile -ne "" -and $canonicalIdCtx -ne "" -and (Test-Path $profileFile)) {
+                $versionHint = _Compiler-ProfileVersion -ProfileFile $profileFile -CanonicalId $canonicalIdCtx
+                if ($versionHint) { $updated['version'] = $versionHint }
+            }
         }
         "fs" {
             # fs resources have no backend
@@ -105,22 +151,34 @@ function _Compiler-ResolveResource {
     return $updated
 }
 
-# Invoke-FeatureCompilerRun <FeatureIndexJson> <SortedFeatures>
+# Script-scoped context set by Invoke-FeatureCompilerRun so that
+# _Compiler-ResolveResource can embed profile version hints without signature changes.
+$script:CompilerProfileFile = ""
+$script:CompilerCanonicalId = ""
+
+# Invoke-FeatureCompilerRun <FeatureIndexJson> <SortedFeatures> [<ProfileFile>]
 # Compile DesiredResourceGraph from Feature Index and resolved feature order.
 # Returns DesiredResourceGraph JSON string, or $null on error.
 #
 # For mode:script features: entry with empty resources array.
 # For mode:declarative features: resources expanded with desired_backend.
+# Optional ProfileFile: when supplied, runtime resources embed version hints.
 function Invoke-FeatureCompilerRun {
     param(
-        [Parameter(Mandatory=$true)] [string]$FeatureIndexJson,
-        [Parameter(Mandatory=$true)] [string[]]$SortedFeatures
+        [Parameter(Mandatory=$true)]  [string]   $FeatureIndexJson,
+        [Parameter(Mandatory=$true)]  [string[]] $SortedFeatures,
+        [Parameter(Mandatory=$false)] [string]   $ProfileFile = ""
     )
+
+    $script:CompilerProfileFile = $ProfileFile
 
     $index    = $FeatureIndexJson | ConvertFrom-Json
     $features = [ordered]@{}
 
     foreach ($canonicalId in $SortedFeatures) {
+        # Expose the current canonical ID for _Compiler-ResolveResource
+        $script:CompilerCanonicalId = $canonicalId
+
         $prop = $index.features.PSObject.Properties[$canonicalId]
         if ($null -eq $prop) {
             Log-Error "Invoke-FeatureCompilerRun: feature not found in index: $canonicalId"

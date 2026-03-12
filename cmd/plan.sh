@@ -104,12 +104,13 @@ _plan_print() {
     local C_GREEN='\033[0;32m'
     local C_YELLOW='\033[0;33m'
     local C_RED='\033[0;31m'
+    local C_CYAN='\033[0;36m'
     local C_GRAY='\033[0;90m'
     local C_BOLD='\033[1m'
 
     # Disable colour when not a terminal or TERM is unset/dumb
     if [[ ! -t 1 ]] || [[ "${TERM:-}" == "dumb" ]]; then
-        C_RESET="" C_GREEN="" C_YELLOW="" C_RED="" C_GRAY="" C_BOLD=""
+        C_RESET="" C_GREEN="" C_YELLOW="" C_RED="" C_CYAN="" C_GRAY="" C_BOLD=""
     fi
 
     local actions blocked summary
@@ -117,7 +118,7 @@ _plan_print() {
     blocked=$(echo "$plan_json" | jq -c '.blocked[]' 2>/dev/null || true)
     summary=$(echo "$plan_json" | jq -r '
         .summary |
-        "create=\(.create)  destroy=\(.destroy)  replace=\(.replace)  noop=\(.noop)  blocked=\(.blocked)"
+        "create=\(.create)  destroy=\(.destroy)  replace=\(.replace)  strengthen=\(.strengthen // 0)  noop=\(.noop)  blocked=\(.blocked)"
     ')
 
     echo ""
@@ -143,21 +144,30 @@ _plan_print() {
                 from=$(echo "$action" | jq -r '.details.from_version // ""')
                 to=$(echo "$action"   | jq -r '.details.to_version   // ""')
                 if [[ -n "$from" && -n "$to" ]]; then
-                    printf "  ${C_YELLOW}%-9s${C_RESET} %-20s %s → %s\n" \
+                    printf "  ${C_YELLOW}%-16s${C_RESET} %-20s %s \u2192 %s\n" \
                         "replace" "$feature" "$from" "$to"
                 else
-                    printf "  ${C_YELLOW}%-9s${C_RESET} %s\n" "replace" "$feature"
+                    printf "  ${C_YELLOW}%-16s${C_RESET} %s\n" "replace" "$feature"
                 fi
                 has_output=true
                 ;;
+            replace_backend)
+                printf "  ${C_YELLOW}%-16s${C_RESET} %s\n" "replace_backend" "$feature"
+                has_output=true
+                ;;
+            strengthen)
+                local add_count
+                add_count=$(echo "$action" | jq '.details.add_resources | length' 2>/dev/null || echo "0")
+                printf "  ${C_CYAN}%-16s${C_RESET} %-20s (+%s resource(s))\n" \
+                    "strengthen" "$feature" "$add_count"
+                has_output=true
+                ;;
             create)
-                local ver
-                ver=$(echo "$action" | jq -r '.details.config_version // ""')
-                if [[ -n "$ver" ]]; then
-                    printf "  ${C_GREEN}%-9s${C_RESET} %-20s %s\n" "create" "$feature" "$ver"
-                else
-                    printf "  ${C_GREEN}%-9s${C_RESET} %s\n" "create" "$feature"
-                fi
+                printf "  ${C_GREEN}%-16s${C_RESET} %s\n" "create" "$feature"
+                has_output=true
+                ;;
+            destroy)
+                printf "  ${C_RED}%-16s${C_RESET} %s\n" "destroy" "$feature"
                 has_output=true
                 ;;
         esac
@@ -169,7 +179,7 @@ _plan_print() {
         local feat reason
         feat=$(echo "$item"   | jq -r '.feature')
         reason=$(echo "$item" | jq -r '.reason // ""')
-        printf "  ${C_RED}${C_BOLD}%-9s${C_RESET} %-20s ${C_GRAY}%s${C_RESET}\n" \
+        printf "  ${C_RED}${C_BOLD}%-16s${C_RESET} %-20s ${C_GRAY}%s${C_RESET}\n" \
             "blocked" "$feat" "$reason"
         has_output=true
     done <<< "$blocked"
@@ -180,7 +190,7 @@ _plan_print() {
             [[ -z "$item" ]] && continue
             local feat
             feat=$(echo "$item" | jq -r '.feature')
-            printf "  ${C_GRAY}%-9s${C_RESET} %s\n" "noop" "$feat"
+            printf "  ${C_GRAY}%-16s${C_RESET} %s\n" "noop" "$feat"
             has_output=true
         done <<< "$(echo "$plan_json" | jq -c '.noops[]' 2>/dev/null || true)"
     fi
@@ -193,16 +203,17 @@ _plan_print() {
     echo ""
 
     # Simple guidance message
-    local create destroy replace blocked_count
-    create=$(echo "$plan_json"       | jq '.summary.create')
-    destroy=$(echo "$plan_json"      | jq '.summary.destroy')
-    replace=$(echo "$plan_json"      | jq '.summary.replace')
-    blocked_count=$(echo "$plan_json" | jq '.summary.blocked')
+    local create destroy replace strengthen blocked_count
+    create=$(echo "$plan_json"         | jq '.summary.create')
+    destroy=$(echo "$plan_json"         | jq '.summary.destroy')
+    replace=$(echo "$plan_json"         | jq '.summary.replace')
+    strengthen=$(echo "$plan_json"      | jq '.summary.strengthen // 0')
+    blocked_count=$(echo "$plan_json"   | jq '.summary.blocked')
 
     if [[ "$blocked_count" -gt 0 ]]; then
         printf "${C_RED}%d blocked feature(s) — run 'apply' to see details.${C_RESET}\n\n" \
             "$blocked_count"
-    elif [[ "$((create + destroy + replace))" -eq 0 ]]; then
+    elif [[ "$((create + destroy + replace + strengthen))" -eq 0 ]]; then
         printf "${C_GRAY}Nothing to do.${C_RESET}\n\n"
     else
         printf "${C_BOLD}Run 'dotfiles apply %s' to apply these changes.${C_RESET}\n\n" \
@@ -239,8 +250,12 @@ read_feature_metadata "$_plan_index" _plan_valid_features || exit 1
 declare -a _plan_sorted
 resolve_dependencies _plan_valid_features _plan_sorted || exit 1
 
+# Compile DesiredResourceGraph (profile version hints embedded for runtime resources)
+_plan_drg=""
+_plan_drg=$(feature_compiler_run "$_plan_index" _plan_sorted "$PROFILE_FILE") || exit 1
+
 # Plan: pure computation — no state writes
-plan_json=$(planner_run "$PROFILE_FILE" _plan_sorted) || exit 1
+plan_json=$(planner_run "$_plan_drg" _plan_sorted) || exit 1
 
 # Inject spec_version-blocked features into plan output
 plan_json=$(_plan_inject_blocked "$plan_json" "$_plan_sv_blocked")

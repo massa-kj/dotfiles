@@ -3,16 +3,17 @@
 # Module: compiler (FeatureCompiler)
 #
 # Responsibility:
-#   Compile the DesiredResourceGraph from Feature Index + resolved feature order
-#   and policy (desired_backend resolution).
+#   Compile the DesiredResourceGraph from Feature Index + resolved feature order,
+#   policy (desired_backend resolution), and profile (version hints).
 #
 # Public API (Stable):
-#   feature_compiler_run <feature_index_json> <sorted_features_nameref>
+#   feature_compiler_run <feature_index_json> <sorted_features_nameref> [<profile_file>]
 #   Prints DesiredResourceGraph JSON to stdout.
 #
 # Contract:
 #   - mode:script  → entry with empty resources array (no script execution here)
 #   - mode:declarative → resources expanded with desired_backend from policy
+#   - runtime resources: version embedded from profile version hints if available
 #   - Declarative validation: error if no resources, error if install.sh present
 #   - Planner must not re-resolve backends; desired_backend is authoritative here
 #
@@ -54,9 +55,12 @@ _compiler_resource_id() {
             echo "runtime:${name}"
             ;;
         fs)
-            local path
-            path=$(printf '%s' "$resource_json" | jq -r '.path // empty')
-            echo "fs:$(basename "$path")"
+            # Feature.yaml uses 'target' for the deployment path; fall back to 'path'.
+            local target
+            target=$(printf '%s' "$resource_json" | jq -r '(.target // .path) // empty')
+            # Normalize ~ to $HOME for stable id generation
+            target="${target/#\~/$HOME}"
+            echo "fs:$(basename "$target")"
             ;;
         *)
             echo "${kind}:unknown"
@@ -97,10 +101,23 @@ _compiler_resolve_resource() {
             local name desired_backend
             name=$(printf '%s' "$resource_json" | jq -r '.name // empty')
             desired_backend=$(resolve_backend_for "runtime" "$name" 2>/dev/null) || desired_backend="unknown"
-            updated_json=$(printf '%s' "$resource_json" | jq \
-                --arg id      "$resource_id" \
-                --arg backend "$desired_backend" \
-                '. + {"id": $id, "desired_backend": $backend}')
+            # Embed profile version hint if available (set by feature_compiler_run)
+            local version_hint=""
+            if [[ -n "${_COMPILER_PROFILE_FILE:-}" && -n "${_COMPILER_CANONICAL_ID:-}" ]]; then
+                version_hint=$(_compiler_profile_version "$_COMPILER_PROFILE_FILE" "$_COMPILER_CANONICAL_ID")
+            fi
+            if [[ -n "$version_hint" ]]; then
+                updated_json=$(printf '%s' "$resource_json" | jq \
+                    --arg id      "$resource_id" \
+                    --arg backend "$desired_backend" \
+                    --arg ver     "$version_hint" \
+                    '. + {"id": $id, "desired_backend": $backend, "version": $ver}')
+            else
+                updated_json=$(printf '%s' "$resource_json" | jq \
+                    --arg id      "$resource_id" \
+                    --arg backend "$desired_backend" \
+                    '. + {"id": $id, "desired_backend": $backend}')
+            fi
             ;;
         fs)
             # fs resources have no backend
@@ -117,20 +134,51 @@ _compiler_resolve_resource() {
     printf '%s' "$updated_json"
 }
 
-# feature_compiler_run <feature_index_json> <sorted_features_nameref>
+# _compiler_profile_version <profile_file> <canonical_id>
+# Extract the version hint for a feature from a profile file.
+# Tries canonical ID first (e.g. "core/node"), then bare name (e.g. "node").
+# Prints the version string, or empty string if not found.
+_compiler_profile_version() {
+    local profile_file="$1"
+    local canonical_id="$2"
+
+    [[ -z "$profile_file" || ! -f "$profile_file" ]] && echo "" && return 0
+
+    # Try canonical ID bracket notation (handles "/" in key)
+    local ver
+    ver=$(yq eval ".features[\"${canonical_id}\"].version // \"\"" "$profile_file" 2>/dev/null)
+    if [[ -n "$ver" && "$ver" != "null" ]]; then echo "$ver"; return 0; fi
+
+    # Bare name fallback for profiles without source_id prefix
+    local bare="${canonical_id#*/}"
+    if [[ "$bare" != "$canonical_id" ]]; then
+        ver=$(yq eval ".features[\"${bare}\"].version // \"\"" "$profile_file" 2>/dev/null)
+        if [[ -n "$ver" && "$ver" != "null" ]]; then echo "$ver"; return 0; fi
+    fi
+
+    echo ""
+}
+
+# feature_compiler_run <feature_index_json> <sorted_features_nameref> [<profile_file>]
 # Compile DesiredResourceGraph from Feature Index and resolved feature order.
 # Prints DesiredResourceGraph JSON to stdout.
 #
 # For mode:script features: produces an entry with an empty resources array.
 # For mode:declarative features: expands resources with desired_backend.
+# profile_file (optional): when provided, runtime resources receive version from profile.
 feature_compiler_run() {
     local feature_index_json="$1"
     local -n _fcr_sorted="$2"
+    # Optional: profile file path for version hint resolution
+    export _COMPILER_PROFILE_FILE="${3:-}"
 
     local features_json="{}"
 
     local canonical_id
     for canonical_id in "${_fcr_sorted[@]}"; do
+        # Expose canonical_id for _compiler_resolve_resource to read profile version hint
+        export _COMPILER_CANONICAL_ID="$canonical_id"
+
         local entry
         entry=$(printf '%s' "$feature_index_json" \
             | jq -r --arg id "$canonical_id" '.features[$id] // "null"')

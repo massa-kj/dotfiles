@@ -378,12 +378,12 @@ function Invoke-OrchestratorApply {
     $sortedFeatures = Resolve-Dependencies -DesiredFeatures $svResult.Valid
     if ($null -eq $sortedFeatures) { exit 1 }
 
-    # Compile DesiredResourceGraph (used by planner in Phase 3)
-    $drg = Invoke-FeatureCompilerRun -FeatureIndexJson $featureIndex -SortedFeatures $sortedFeatures
+    # Compile DesiredResourceGraph (profile version hints embedded for runtime resources)
+    $drg = Invoke-FeatureCompilerRun -FeatureIndexJson $featureIndex -SortedFeatures $sortedFeatures -ProfileFile $ProfileFile
     if ($null -eq $drg) { exit 1 }
 
     # Plan: pure computation of what needs to happen
-    $planJson = Invoke-PlannerRun -ProfileFile $ProfileFile -SortedFeatures $sortedFeatures
+    $planJson = Invoke-PlannerRun -DrgJson $drg -SortedFeatures $sortedFeatures
     $planJson = Invoke-PlanInjectBlocked -PlanJson $planJson -BlockedExtraJson $svResult.BlockedJson
 
     # Execute: impure — calls scripts, commits state
