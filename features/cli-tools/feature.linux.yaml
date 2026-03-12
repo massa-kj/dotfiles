@@ -1,0 +1,8 @@
+depends: []
+
+packages:
+  - fd
+  - fzf
+  - ghq
+  - ripgrep
+  - unzip

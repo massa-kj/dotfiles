@@ -17,7 +17,7 @@ Log-Task "Installing feature: $FeatureName"
 # Read version from profile (default: latest)
 $Version = if ($env:DOTFILES_FEATURE_CONFIG_VERSION) { $env:DOTFILES_FEATURE_CONFIG_VERSION } else { "latest" }
 
-# Runtime installation is handled by executor (declared in meta.yaml).
+# Runtime installation is handled by executor (declared in feature.yaml).
 # uv packages are managed by the separate `uv` feature.
 
 Log-Success "Feature $FeatureName installed successfully"

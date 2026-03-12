@@ -1,0 +1,3 @@
+mode: script
+description: feature without explicit spec_version
+depends: []

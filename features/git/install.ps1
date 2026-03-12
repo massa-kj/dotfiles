@@ -17,11 +17,11 @@ $FeatureName = "git"
 
 Log-Task "Installing feature: $FeatureName"
 
-# Git package installation is handled by executor (declared in meta.yaml).
+# Git package installation is handled by executor (declared in feature.yaml).
 if (Test-Command -Command "git") {
     Log-Info "git is available"
 } else {
-    Log-Warn "git not found in PATH; executor should have installed it via meta.yaml packages"
+    Log-Warn "git not found in PATH; executor should have installed it via feature.yaml packages"
 }
 
 # Deploy configuration files

@@ -1,0 +1,7 @@
+spec_version: 1
+mode: script
+description: Essential command-line utilities (fd, fzf, ripgrep, ghq)
+depends: []
+
+requires:
+  - name: package_manager

@@ -48,51 +48,65 @@ sources:
 EOF
 
 mkdir -p "$DOTFILES_DATA_HOME/sources/ext/features/extfeat"
-cat > "$DOTFILES_DATA_HOME/sources/ext/features/extfeat/meta.yaml" <<'EOF'
+cat > "$DOTFILES_DATA_HOME/sources/ext/features/extfeat/feature.yaml" <<'EOF'
+spec_version: 1
+mode: script
 description: external feature
 depends: []
 EOF
 
 mkdir -p "$DOTFILES_CONFIG_HOME/features/myfeat"
-cat > "$DOTFILES_CONFIG_HOME/features/myfeat/meta.yaml" <<'EOF'
+cat > "$DOTFILES_CONFIG_HOME/features/myfeat/feature.yaml" <<'EOF'
+spec_version: 1
+mode: script
 description: user feature
 depends: []
 EOF
 
-# Create minimal meta.yaml files for test features.
+# Create minimal feature.yaml files for test features.
 # alpha  – no deps
 # beta   – depends: [alpha] (bare name -> core/alpha)
 # gamma  – depends: [beta]  (bare name -> core/beta); also depends on user/delta explicitly
 # user/delta is a user-source feature (not in this source; only tests normalization)
 
 mkdir -p "$TMPDIR_FEATURES/alpha"
-cat > "$TMPDIR_FEATURES/alpha/meta.yaml" <<'EOF'
+cat > "$TMPDIR_FEATURES/alpha/feature.yaml" <<'EOF'
+spec_version: 1
+mode: script
 description: alpha feature
 depends: []
 EOF
 
 mkdir -p "$TMPDIR_FEATURES/beta"
-cat > "$TMPDIR_FEATURES/beta/meta.yaml" <<'EOF'
+cat > "$TMPDIR_FEATURES/beta/feature.yaml" <<'EOF'
+spec_version: 1
+mode: script
 description: beta feature
 depends:
   - alpha
 EOF
 
 mkdir -p "$TMPDIR_FEATURES/gamma"
-cat > "$TMPDIR_FEATURES/gamma/meta.yaml" <<'EOF'
+cat > "$TMPDIR_FEATURES/gamma/feature.yaml" <<'EOF'
+spec_version: 1
+mode: script
 description: gamma feature
 depends:
   - beta
 EOF
 
 mkdir -p "$TMPDIR_FEATURES/delta"
-cat > "$TMPDIR_FEATURES/delta/meta.yaml" <<'EOF'
+cat > "$TMPDIR_FEATURES/delta/feature.yaml" <<'EOF'
+spec_version: 1
+mode: script
 description: delta feature (simulates user-source)
 depends: []
 EOF
 
 mkdir -p "$TMPDIR_FEATURES/provider"
-cat > "$TMPDIR_FEATURES/provider/meta.yaml" <<'EOF'
+cat > "$TMPDIR_FEATURES/provider/feature.yaml" <<'EOF'
+spec_version: 1
+mode: script
 description: provides a capability
 depends: []
 provides:
@@ -100,7 +114,9 @@ provides:
 EOF
 
 mkdir -p "$TMPDIR_FEATURES/consumer"
-cat > "$TMPDIR_FEATURES/consumer/meta.yaml" <<'EOF'
+cat > "$TMPDIR_FEATURES/consumer/feature.yaml" <<'EOF'
+spec_version: 1
+mode: script
 description: requires a capability
 depends: []
 requires:
@@ -229,7 +245,9 @@ _assert_eq \
 echo "resolve_dependencies: missing dep → error"
 
 mkdir -p "$TMPDIR_FEATURES/orphan"
-cat > "$TMPDIR_FEATURES/orphan/meta.yaml" <<'EOF'
+cat > "$TMPDIR_FEATURES/orphan/feature.yaml" <<'EOF'
+spec_version: 1
+mode: script
 description: depends on non-existent feature
 depends:
   - nonexistent
@@ -286,7 +304,9 @@ echo "  PASS  no bare names in output (${#real_sorted[@]} features checked)"
 echo "read_feature_metadata: external allow-list enforcement"
 
 mkdir -p "$TMPDIR_FEATURES/extparent"
-cat > "$TMPDIR_FEATURES/extparent/meta.yaml" <<'EOF'
+cat > "$TMPDIR_FEATURES/extparent/feature.yaml" <<'EOF'
+spec_version: 1
+mode: script
 description: depends on disallowed external feature
 depends:
     - ext/blocked

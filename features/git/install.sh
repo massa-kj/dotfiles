@@ -19,13 +19,13 @@ log_task "Installing feature: $FEATURE_NAME"
 # Ensure state is initialized (needed for state_add_file below)
 state_init
 
-# git package installation is handled by executor (declared in meta.yaml packages).
+# git package installation is handled by executor (declared in feature.yaml packages).
 if ! has_command "git"; then
-    log_warn "git not found; executor should have installed it via meta.yaml packages"
+    log_warn "git not found; executor should have installed it via feature.yaml packages"
 fi
 
 # Deploy configuration files
-# Note: ~/.config/git/ignore is deployed by executor (declared in meta.yaml files).
+# Note: ~/.config/git/ignore is deployed by executor (declared in feature.yaml files).
 # .gitconfig requires a platform-specific merge and is handled here.
 FEATURE_FILES_DIR="$SCRIPT_DIR/files"
 TARGET_HOME="${HOME}"
@@ -59,12 +59,12 @@ if [[ -f "$GITCONFIG_BASE" ]]; then
         log_success ".gitconfig created"
     fi
 
-    # Register generated .gitconfig in state (dynamically merged; not in meta.yaml files)
+    # Register generated .gitconfig in state (dynamically merged; not in feature.yaml files)
     state_add_file "$FEATURE_NAME" "$GITCONFIG_TARGET"
 
     rm -f "$GITCONFIG_TEMP"
 fi
 
-# Note: ~/.config/git/ignore is deployed by executor (declared in meta.yaml files).
+# Note: ~/.config/git/ignore is deployed by executor (declared in feature.yaml files).
 
 log_success "Feature $FEATURE_NAME installed successfully"

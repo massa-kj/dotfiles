@@ -14,7 +14,7 @@ FEATURE_NAME="neovim"
 log_task "Installing feature: $FEATURE_NAME"
 
 # neovim package and config directory (nvim/) are managed by executor
-# (declared in meta.yaml packages and files sections).
+# (declared in feature.yaml packages and files sections).
 
 log_success "Feature $FEATURE_NAME installed successfully"
 log_info "Run 'nvim' to install plugins automatically"

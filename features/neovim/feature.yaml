@@ -1,0 +1,18 @@
+spec_version: 1
+mode: script
+description: Neovim text editor with custom configuration
+depends:
+  - git
+
+requires:
+  - name: package_manager
+
+packages:
+  # neovim binary is not uninstalled on feature remove (may be used independently)
+  - name: neovim
+    managed: false
+
+files:
+  - src: nvim
+    target: ~/.config/nvim
+    op: link

@@ -14,6 +14,6 @@ $FeatureName = "lua"
 
 Log-Task "Installing feature: $FeatureName"
 
-# Packages and runtimes are installed by executor (declared in meta.yaml).
+# Packages and runtimes are installed by executor (declared in feature.yaml).
 
 Log-Success "Feature $FeatureName installed successfully"

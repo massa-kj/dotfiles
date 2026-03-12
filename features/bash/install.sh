@@ -21,7 +21,7 @@ if ! has_command "bash"; then
 fi
 
 # Configuration files (.bashrc, .bashrc.d) are deployed by executor
-# (declared in meta.yaml files section).
+# (declared in feature.yaml files section).
 
 log_success "Feature $FEATURE_NAME installed successfully"
 log_info "Run 'source ~/.bashrc' to apply changes"

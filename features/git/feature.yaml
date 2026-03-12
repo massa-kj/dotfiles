@@ -1,0 +1,15 @@
+spec_version: 1
+mode: script
+description: Git version control with custom configuration
+depends: []
+
+packages:
+  # git is a system tool; dotfiles tracks it but does not uninstall on feature remove
+  - name: git
+    managed: false
+
+files:
+  # gitconfig is generated/merged in install.sh; only ignore is declared here
+  - src: ignore
+    target: ~/.config/git/ignore
+    op: link

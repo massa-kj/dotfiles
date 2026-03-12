@@ -1,0 +1,7 @@
+spec_version: 1
+mode: script
+description: Terminal multiplexer with custom configuration
+depends: []
+
+requires:
+  - name: package_manager

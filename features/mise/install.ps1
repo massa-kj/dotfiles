@@ -15,7 +15,7 @@ $FeatureName = "mise"
 
 Log-Task "Installing feature: $FeatureName"
 
-# Package installation is handled by executor (declared in meta.yaml).
+# Package installation is handled by executor (declared in feature.yaml).
 if (Test-Command "mise") {
     Log-Info "mise is available"
 } else {

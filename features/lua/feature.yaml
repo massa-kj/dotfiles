@@ -1,0 +1,17 @@
+spec_version: 1
+mode: script
+description: Lua development environment with formatters and language servers
+depends: []
+
+requires:
+  - name: package_manager
+  - name: runtime_manager
+
+packages:
+  - luacheck
+
+runtimes:
+  - name: stylua
+    version: "2.1.0"
+  - name: lua-language-server
+    version: "3.14.0"

@@ -26,7 +26,7 @@ if ($Version -ne "latest") {
     Log-Info "Target Neovim version: $Version"
 }
 
-# Package installation is handled by executor (declared in meta.yaml).
+# Package installation is handled by executor (declared in feature.yaml).
 
 # Deploy configuration files
 $featureFilesDir = Join-Path $ScriptDir "files\nvim"

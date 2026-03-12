@@ -13,7 +13,7 @@ FEATURE_NAME="node"
 
 log_task "Installing feature: $FEATURE_NAME"
 
-# node runtime installation is handled by executor (declared in meta.yaml runtimes).
+# node runtime installation is handled by executor (declared in feature.yaml runtimes).
 # npm global packages are managed by the separate `npm` feature (features/npm/).
 
 log_success "Feature $FEATURE_NAME installed successfully"

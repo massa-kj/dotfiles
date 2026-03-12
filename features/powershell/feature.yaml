@@ -1,0 +1,4 @@
+spec_version: 1
+mode: script
+description: PowerShell configuration with custom profile
+depends: []

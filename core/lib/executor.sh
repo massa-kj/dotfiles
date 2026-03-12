@@ -12,7 +12,7 @@
 # Execution contract:
 #   - Blocked features in plan.blocked are reported and skipped.
 #   - Actions are executed in plan.actions order (destroy → replace → create).
-#   - For each action, executor reads meta.yaml to determine packages/runtimes/files.
+#   - For each action, executor reads feature.yaml to determine packages/runtimes/files.
 #   - On any failure: abort immediately with non-zero exit.
 #     Partial execution is left in place; state reflects what succeeded.
 #
@@ -27,7 +27,7 @@
 #   Feature scripts must NOT call state_remove_feature, state_add_package
 #   (except for secondary packages like npm:/uv:), install_package, install_runtime.
 #
-# meta.yaml package/runtime/files schema:
+# feature.yaml package/runtime/files schema:
 #   packages:
 #     - tmux                    # string: name only, managed=true
 #     - name: neovim
@@ -64,45 +64,45 @@ _executor_feature_dir() {
     echo "${feature_root}/${feat_name}"
 }
 
-# _executor_resolve_meta_file <feature>
-# Print the base meta.yaml path for a feature. Fails if not found.
+# _executor_resolve_feature_file <feature>
+# Print the base feature.yaml path for a feature. Fails if not found.
 # <feature> may be a canonical ID ("core/git") or bare name; both are handled.
-_executor_resolve_meta_file() {
+_executor_resolve_feature_file() {
     local feature="$1"
     local feature_dir
     feature_dir=$(_executor_feature_dir "$feature") || return 1
-    local meta="$feature_dir/meta.yaml"
-    if [[ ! -f "$meta" ]]; then
-        log_error "_executor_resolve_meta_file: meta.yaml not found for: $feature"
+    local ffile="$feature_dir/feature.yaml"
+    if [[ ! -f "$ffile" ]]; then
+        log_error "_executor_resolve_feature_file: feature.yaml not found for: $feature"
         return 1
     fi
-    echo "$meta"
+    echo "$ffile"
 }
 
-# _executor_resolve_platform_meta_file <feature>
-# Print the platform-specific meta.yaml path, or empty string if none exists.
-# Priority: meta.wsl.yaml > meta.linux.yaml (for wsl), meta.linux.yaml (for linux),
-#           meta.<platform>.yaml (for others).
-_executor_resolve_platform_meta_file() {
+# _executor_resolve_platform_feature_file <feature>
+# Print the platform-specific feature.yaml path, or empty string if none exists.
+# Priority: feature.wsl.yaml > feature.linux.yaml (for wsl), feature.linux.yaml (for linux),
+#           feature.<platform>.yaml (for others).
+_executor_resolve_platform_feature_file() {
     local feature="$1"
     local dir
     dir=$(_executor_feature_dir "$feature") || return 1
 
     if [[ "$DOTFILES_PLATFORM" == "wsl" ]]; then
-        if [[ -f "$dir/meta.wsl.yaml" ]]; then echo "$dir/meta.wsl.yaml"; return; fi
-        if [[ -f "$dir/meta.linux.yaml" ]]; then echo "$dir/meta.linux.yaml"; return; fi
+        if [[ -f "$dir/feature.wsl.yaml" ]]; then echo "$dir/feature.wsl.yaml"; return; fi
+        if [[ -f "$dir/feature.linux.yaml" ]]; then echo "$dir/feature.linux.yaml"; return; fi
     elif [[ "$DOTFILES_PLATFORM" == "linux" ]]; then
-        if [[ -f "$dir/meta.linux.yaml" ]]; then echo "$dir/meta.linux.yaml"; return; fi
+        if [[ -f "$dir/feature.linux.yaml" ]]; then echo "$dir/feature.linux.yaml"; return; fi
     else
-        if [[ -f "$dir/meta.${DOTFILES_PLATFORM}.yaml" ]]; then
-            echo "$dir/meta.${DOTFILES_PLATFORM}.yaml"; return
+        if [[ -f "$dir/feature.${DOTFILES_PLATFORM}.yaml" ]]; then
+            echo "$dir/feature.${DOTFILES_PLATFORM}.yaml"; return
         fi
     fi
     echo ""
 }
 
-# _executor_get_pkgs_from_meta <meta_file>
-# Print package names (one per line) from a meta.yaml file.
+# _executor_get_pkgs_from_meta <feature_file>
+# Print package names (one per line) from a feature.yaml file.
 # Supports string form ("tmux") and mapping form ({name: tmux, managed: false}).
 _executor_get_pkgs_from_meta() {
     local meta_file="$1"
@@ -119,10 +119,10 @@ _executor_pkg_managed() {
     local pkg="$2"
 
     local meta_file
-    meta_file=$(_executor_resolve_meta_file "$feature") || return 0
+    meta_file=$(_executor_resolve_feature_file "$feature") || return 0
 
     local platform_meta
-    platform_meta=$(_executor_resolve_platform_meta_file "$feature")
+    platform_meta=$(_executor_resolve_platform_feature_file "$feature")
 
     # Check base + platform meta files for managed:false
     for f in "$meta_file" "$platform_meta"; do
@@ -138,8 +138,8 @@ _executor_pkg_managed() {
     return 0
 }
 
-# _executor_get_runtimes_json <meta_file>
-# Print runtimes array as JSON from a meta.yaml file. Returns [] if none.
+# _executor_get_runtimes_json <feature_file>
+# Print runtimes array as JSON from a feature.yaml file. Returns [] if none.
 _executor_get_runtimes_json() {
     local meta_file="$1"
     [[ -z "$meta_file" ]] && echo "[]" && return 0
@@ -148,8 +148,8 @@ _executor_get_runtimes_json() {
     echo "${result:-[]}"
 }
 
-# _executor_get_files_json <meta_file>
-# Print files array as JSON from a meta.yaml file. Returns [] if none.
+# _executor_get_files_json <feature_file>
+# Print files array as JSON from a feature.yaml file. Returns [] if none.
 _executor_get_files_json() {
     local meta_file="$1"
     [[ -z "$meta_file" ]] && echo "[]" && return 0
@@ -160,8 +160,8 @@ _executor_get_files_json() {
 
 # ── Resource operations ───────────────────────────────────────────────────────
 
-# _executor_apply_packages <feature> <meta_file> [<platform_meta_file>]
-# Install all packages declared in meta.yaml and add them to the active state patch.
+# _executor_apply_packages <feature> <feature_file> [<platform_feature_file>]
+# Install all packages declared in feature.yaml and add them to the active state patch.
 # Skips packages where backend_package_exists returns true.
 _executor_apply_packages() {
     local feature="$1"
@@ -211,10 +211,10 @@ _executor_apply_packages() {
     done
 }
 
-# _executor_apply_runtimes <feature> <meta_file> <platform_meta_file> <config_version>
-# Install all runtimes declared in meta.yaml and add them to the active state patch.
+# _executor_apply_runtimes <feature> <feature_file> <platform_feature_file> <config_version>
+# Install all runtimes declared in feature.yaml and add them to the active state patch.
 # Runtime version resolution order:
-#   1. Explicit version in meta.yaml ({name: rust-analyzer, version: "2025-05-26"})
+#   1. Explicit version in feature.yaml ({name: rust-analyzer, version: "2025-05-26"})
 #   2. config_version from profile (for the primary runtime, no explicit version)
 #   3. "latest" as fallback
 _executor_apply_runtimes() {
@@ -278,8 +278,8 @@ _executor_apply_runtimes() {
     done
 }
 
-# _executor_deploy_files <feature> <meta_file> [<platform_meta_file>]
-# Deploy files declared in meta.yaml and add fs resources to the active state patch.
+# _executor_deploy_files <feature> <feature_file> [<platform_feature_file>]
+# Deploy files declared in feature.yaml and add fs resources to the active state patch.
 # Supports op: link (symlink with copy fallback) and op: copy.
 _executor_deploy_files() {
     local feature="$1"
@@ -375,7 +375,7 @@ _executor_deploy_files() {
 # Removal order (reverse of install): secondary-pkgs skipped, files → runtimes → packages
 # Skip rules:
 #   - Resources with backend="unknown" are NOT backend-uninstalled (legacy / pre-Phase4)
-#   - Packages with managed:false in meta.yaml are NOT uninstalled
+#   - Packages with managed:false in feature.yaml are NOT uninstalled
 _executor_remove_resources() {
     local feature="$1"
 
@@ -474,7 +474,7 @@ _executor_run_script() {
 # Full install pipeline:
 #   1. Resolve meta files
 #   2. state_patch_begin
-#   3. Install packages/runtimes/files from meta.yaml → state_patch
+#   3. Install packages/runtimes/files from feature.yaml → state_patch
 #   4. state_patch_finalize
 #   5. Run install.sh script (for secondary pkg setup: npm/uv/bootstrap)
 _executor_install() {
@@ -486,8 +486,8 @@ _executor_install() {
     log_info "Installing: $feature"
 
     local meta_file platform_meta
-    meta_file=$(_executor_resolve_meta_file "$feature") || return 1
-    platform_meta=$(_executor_resolve_platform_meta_file "$feature")
+    meta_file=$(_executor_resolve_feature_file "$feature") || return 1
+    platform_meta=$(_executor_resolve_platform_feature_file "$feature")
 
     # Begin patch accumulation
     state_patch_begin || return 1
@@ -579,7 +579,7 @@ _executor_replace() {
     state_patch_remove_feature "$feature" || return 1
     state_patch_finalize || return 1
 
-    # Install phase (full meta.yaml + script)
+    # Install phase (full feature.yaml + script)
     _executor_install "$feature" "$config_version" || return 1
 }
 

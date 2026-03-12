@@ -1,0 +1,4 @@
+depends:
+  - vcredist
+  # TODO: Separate it into a separate feature and depend on gcc
+  - cli-tools

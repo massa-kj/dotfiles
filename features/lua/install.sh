@@ -14,6 +14,6 @@ FEATURE_NAME="lua"
 log_task "Installing feature: $FEATURE_NAME"
 
 # All packages (luacheck) and runtimes (stylua, lua-language-server) are installed
-# by executor (declared in meta.yaml packages and runtimes sections).
+# by executor (declared in feature.yaml packages and runtimes sections).
 
 log_success "Feature $FEATURE_NAME installed successfully"

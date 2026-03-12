@@ -1,9 +1,0 @@
-description: Node.js runtime with TypeScript and ESLint tooling
-depends: []
-
-requires:
-  - name: runtime_manager
-
-runtimes:
-  # version resolved from profile config (DOTFILES_FEATURE_CONFIG_VERSION)
-  - name: node

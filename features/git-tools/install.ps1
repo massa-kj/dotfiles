@@ -16,7 +16,7 @@ $FeatureName = "git-tools"
 
 Log-Task "Installing feature: $FeatureName"
 
-# Packages are installed by executor (declared in meta.yaml).
+# Packages are installed by executor (declared in feature.yaml).
 
 # Deploy lazygit configuration
 $featureFilesDir = Join-Path $ScriptDir "files"

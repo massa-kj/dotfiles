@@ -14,7 +14,7 @@ FEATURE_NAME="brew"
 
 log_task "Installing feature: $FEATURE_NAME"
 
-# Package tracking is handled by executor (declared in meta.yaml packages section).
+# Package tracking is handled by executor (declared in feature.yaml packages section).
 
 if has_command "brew"; then
     log_info "Homebrew is already installed"

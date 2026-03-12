@@ -1,0 +1,4 @@
+spec_version: 999
+mode: script
+description: future feature with unknown spec_version
+depends: []

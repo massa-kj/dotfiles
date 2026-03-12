@@ -40,7 +40,7 @@ $script:Provides = @{}   # capability -> [features that provide it]
 $script:Requires = @{}   # feature    -> [capabilities required]
 
 # Read-FeatureMetadata <Features>
-# Read dependency metadata from meta.yaml files for all features.
+# Read dependency metadata from feature.yaml files for all features.
 # Populates FeatureDeps, Provides, and Requires module-globals.
 function Read-FeatureMetadata {
     param(
@@ -69,15 +69,15 @@ function Read-FeatureMetadata {
         }
 
         $featureDir = _Resolver-GetFeatureDir -Feature $feature
-        $metaFile = Join-Path $featureDir "meta.yaml"
+        $metaFile = Join-Path $featureDir "feature.yaml"
 
-        # Resolve platform-specific meta file
+        # Resolve platform-specific feature file
         $platformMetaFile = $null
-        $platformFile = Join-Path $featureDir "meta.$($global:DOTFILES_PLATFORM).yaml"
-        # WSL also falls back to meta.linux.yaml
-        $linuxFile = Join-Path $featureDir "meta.linux.yaml"
+        $platformFile = Join-Path $featureDir "feature.$($global:DOTFILES_PLATFORM).yaml"
+        # WSL also falls back to feature.linux.yaml
+        $linuxFile = Join-Path $featureDir "feature.linux.yaml"
         if ($global:DOTFILES_PLATFORM -eq "wsl") {
-            $wslFile = Join-Path $featureDir "meta.wsl.yaml"
+            $wslFile = Join-Path $featureDir "feature.wsl.yaml"
             if (Test-Path $wslFile)   { $platformMetaFile = $wslFile }
             elseif (Test-Path $linuxFile) { $platformMetaFile = $linuxFile }
         } elseif (Test-Path $platformFile) {
@@ -85,7 +85,7 @@ function Read-FeatureMetadata {
         }
 
         if (-not (Test-Path $metaFile)) {
-            Log-Error "Meta file not found: $metaFile"
+            Log-Error "feature.yaml not found: $metaFile"
             return $false
         }
 

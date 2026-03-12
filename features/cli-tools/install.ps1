@@ -14,6 +14,6 @@ $FeatureName = "cli-tools"
 
 Log-Task "Installing feature: $FeatureName"
 
-# Packages are installed by executor (declared in meta.windows.yaml).
+# Packages are installed by executor (declared in feature.windows.yaml).
 
 Log-Success "Feature $FeatureName installed successfully"

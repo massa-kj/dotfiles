@@ -1,0 +1,17 @@
+spec_version: 1
+mode: script
+description: Git enhancement tools (lazygit, delta)
+depends:
+  - git
+
+requires:
+  - name: package_manager
+
+packages:
+  - git-delta
+  - lazygit
+
+files:
+  - src: lazygit
+    target: ~/.config/lazygit
+    op: link

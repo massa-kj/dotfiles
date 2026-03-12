@@ -35,6 +35,9 @@ function Get-DotfilesStateFilePath {
 # Features directory
 $global:DOTFILES_FEATURES_DIR = Join-Path $DOTFILES_ROOT "features"
 
+# Maximum supported feature spec_version
+$global:SUPPORTED_FEATURE_SPEC_VERSION = 1
+
 # Profiles directory (override allowed)
 if (-not (Get-Variable -Scope Global -Name DOTFILES_PROFILES_DIR -ErrorAction SilentlyContinue) -and -not $env:DOTFILES_PROFILES_DIR) {
 	$global:DOTFILES_PROFILES_DIR = Join-Path $global:DOTFILES_CONFIG_HOME "profiles"

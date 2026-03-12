@@ -14,6 +14,6 @@ $FeatureName = "vcredist"
 
 Log-Task "Installing feature: $FeatureName"
 
-# Package installation is handled by executor (declared in meta.yaml).
+# Package installation is handled by executor (declared in feature.yaml).
 
 Log-Success "Feature $FeatureName installed successfully"

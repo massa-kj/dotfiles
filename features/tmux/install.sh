@@ -14,6 +14,6 @@ FEATURE_NAME="tmux"
 log_task "Installing feature: $FEATURE_NAME"
 
 # tmux package and config file (.tmux.conf) are managed by executor
-# (declared in meta.linux.yaml packages and files sections).
+# (declared in feature.linux.yaml packages and files sections).
 
 log_success "Feature $FEATURE_NAME installed successfully"

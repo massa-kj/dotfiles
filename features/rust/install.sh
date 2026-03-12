@@ -15,7 +15,7 @@ FEATURE_NAME="rust"
 log_task "Installing feature: $FEATURE_NAME"
 
 # rust and rust-analyzer runtime installations are handled by executor
-# (declared in meta.yaml runtimes section).
+# (declared in feature.yaml runtimes section).
 # Activate mise so that cargo etc. are available in PATH.
 if has_command "mise"; then
     eval "$(mise activate bash 2>/dev/null)" || true

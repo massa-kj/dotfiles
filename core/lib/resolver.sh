@@ -13,7 +13,7 @@
 # Input/output format (Phase 2+):
 #   All feature identifiers are canonical IDs of the form "<source_id>/<name>".
 #   Bare names in profile are normalized upstream (orchestrator.read_profile).
-#   Bare names in meta.yaml depends[] are normalized here using the feature's own
+#   Bare names in feature.yaml depends[] are normalized here using the feature's own
 #   source_id as the default (same-source dependency rule).
 # -----------------------------------------------------------------------------
 
@@ -52,29 +52,29 @@ _resolver_feature_dir() {
     echo "${feature_dir_root}/${name}"
 }
 
-# _resolver_platform_meta_file <feature>
-# Print the path to the platform-specific meta file, or empty string if none.
+# _resolver_platform_feature_file <feature>
+# Print the path to the platform-specific feature file, or empty string if none.
 # <feature> may be a canonical ID ("core/git") or a bare name; both are handled.
-_resolver_platform_meta_file() {
+_resolver_platform_feature_file() {
     local feature="$1"
     local feature_dir
     feature_dir=$(_resolver_feature_dir "$feature") || return 1
     if [[ "$DOTFILES_PLATFORM" == "wsl" ]]; then
-        if [[ -f "$feature_dir/meta.wsl.yaml" ]]; then
-            echo "$feature_dir/meta.wsl.yaml"
+        if [[ -f "$feature_dir/feature.wsl.yaml" ]]; then
+            echo "$feature_dir/feature.wsl.yaml"
             return 0
-        elif [[ -f "$feature_dir/meta.linux.yaml" ]]; then
-            echo "$feature_dir/meta.linux.yaml"
+        elif [[ -f "$feature_dir/feature.linux.yaml" ]]; then
+            echo "$feature_dir/feature.linux.yaml"
             return 0
         fi
     elif [[ "$DOTFILES_PLATFORM" == "linux" ]]; then
-        if [[ -f "$feature_dir/meta.linux.yaml" ]]; then
-            echo "$feature_dir/meta.linux.yaml"
+        if [[ -f "$feature_dir/feature.linux.yaml" ]]; then
+            echo "$feature_dir/feature.linux.yaml"
             return 0
         fi
     else
-        if [[ -f "$feature_dir/meta.${DOTFILES_PLATFORM}.yaml" ]]; then
-            echo "$feature_dir/meta.${DOTFILES_PLATFORM}.yaml"
+        if [[ -f "$feature_dir/feature.${DOTFILES_PLATFORM}.yaml" ]]; then
+            echo "$feature_dir/feature.${DOTFILES_PLATFORM}.yaml"
             return 0
         fi
     fi
@@ -83,9 +83,9 @@ _resolver_platform_meta_file() {
 }
 
 # read_feature_metadata <features>
-# Read dependency metadata from meta.yaml files for all features.
+# Read dependency metadata from feature.yaml files for all features.
 # <features> must contain canonical IDs (e.g. "core/git", "user/myfeat").
-# Bare names in meta.yaml depends[] are normalized to same-source canonical IDs.
+# Bare names in feature.yaml depends[] are normalized to same-source canonical IDs.
 #
 # Populates:
 #   _RESOLVER_FEATURE_DEPS  – canonical depends per feature
@@ -115,23 +115,23 @@ read_feature_metadata() {
 
         local feature_dir
         feature_dir=$(_resolver_feature_dir "$feature") || return 1
-        local meta_file="$feature_dir/meta.yaml"
+        local feature_file="$feature_dir/feature.yaml"
 
-        if [[ ! -f "$meta_file" ]]; then
-            log_error "Meta file not found: $meta_file (feature: $feature)"
+        if [[ ! -f "$feature_file" ]]; then
+            log_error "feature.yaml not found: $feature_file (feature: $feature)"
             return 1
         fi
 
-        local platform_meta_file
-        platform_meta_file=$(_resolver_platform_meta_file "$feature")
+        local platform_feature_file
+        platform_feature_file=$(_resolver_platform_feature_file "$feature")
 
         # ── depends ─────────────────────────────────────────────────────────
         local raw_deps
-        mapfile -t raw_deps < <(yq eval '.depends[]' "$meta_file" 2>/dev/null || true)
+        mapfile -t raw_deps < <(yq eval '.depends[]' "$feature_file" 2>/dev/null || true)
 
-        if [[ -n "$platform_meta_file" ]]; then
+        if [[ -n "$platform_feature_file" ]]; then
             local platform_deps
-            mapfile -t platform_deps < <(yq eval '.depends[]' "$platform_meta_file" 2>/dev/null || true)
+            mapfile -t platform_deps < <(yq eval '.depends[]' "$platform_feature_file" 2>/dev/null || true)
             raw_deps+=("${platform_deps[@]}")
         fi
 
@@ -164,11 +164,11 @@ read_feature_metadata() {
 
         # ── provides ────────────────────────────────────────────────────────
         local provides
-        mapfile -t provides < <(yq eval '.provides[].name' "$meta_file" 2>/dev/null || true)
+        mapfile -t provides < <(yq eval '.provides[].name' "$feature_file" 2>/dev/null || true)
 
-        if [[ -n "$platform_meta_file" ]]; then
+        if [[ -n "$platform_feature_file" ]]; then
             local platform_provides
-            mapfile -t platform_provides < <(yq eval '.provides[].name' "$platform_meta_file" 2>/dev/null || true)
+            mapfile -t platform_provides < <(yq eval '.provides[].name' "$platform_feature_file" 2>/dev/null || true)
             provides+=("${platform_provides[@]}")
         fi
 
@@ -183,11 +183,11 @@ read_feature_metadata() {
 
         # ── requires ────────────────────────────────────────────────────────
         local requires
-        mapfile -t requires < <(yq eval '.requires[].name' "$meta_file" 2>/dev/null || true)
+        mapfile -t requires < <(yq eval '.requires[].name' "$feature_file" 2>/dev/null || true)
 
-        if [[ -n "$platform_meta_file" ]]; then
+        if [[ -n "$platform_feature_file" ]]; then
             local platform_requires
-            mapfile -t platform_requires < <(yq eval '.requires[].name' "$platform_meta_file" 2>/dev/null || true)
+            mapfile -t platform_requires < <(yq eval '.requires[].name' "$platform_feature_file" 2>/dev/null || true)
             requires+=("${platform_requires[@]}")
         fi
 

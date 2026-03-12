@@ -18,6 +18,6 @@ Log-Task "Installing feature: $FeatureName"
 $Version = if ($env:DOTFILES_FEATURE_CONFIG_VERSION) { $env:DOTFILES_FEATURE_CONFIG_VERSION } else { "latest" }
 Log-Info "Target Rust version: $Version"
 
-# Runtimes are installed by executor (declared in meta.yaml).
+# Runtimes are installed by executor (declared in feature.yaml).
 
 Log-Success "Feature $FeatureName installed successfully"

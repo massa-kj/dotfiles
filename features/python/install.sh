@@ -13,7 +13,7 @@ FEATURE_NAME="python"
 
 log_task "Installing feature: $FEATURE_NAME"
 
-# python and uv runtime installations are handled by executor (declared in meta.yaml runtimes).
+# python and uv runtime installations are handled by executor (declared in feature.yaml runtimes).
 # uv Python packages are managed by the separate `uv` feature (features/uv/).
 
 log_success "Feature $FEATURE_NAME installed successfully"

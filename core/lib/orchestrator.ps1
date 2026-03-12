@@ -303,14 +303,83 @@ function Show-Summary {
     Write-Host ""
 }
 
+# ── Spec version validation ───────────────────────────────────────────────────
+
+# Invoke-ValidateSpecVersions <Features>
+# Check spec_version for each feature. Features with spec_version >
+# SUPPORTED_FEATURE_SPEC_VERSION are excluded from the valid list and recorded
+# in BlockedJson as a JSON array string.
+# Returns PSCustomObject { Valid: string[]; BlockedJson: string }, or $null on error.
+function Invoke-ValidateSpecVersions {
+    param([Parameter(Mandatory=$true)] [string[]]$Features)
+
+    $valid   = [System.Collections.Generic.List[string]]::new()
+    $blocked = @()
+    $maxVer  = if ($global:SUPPORTED_FEATURE_SPEC_VERSION) { [int]$global:SUPPORTED_FEATURE_SPEC_VERSION } else { 1 }
+
+    foreach ($feature in $Features) {
+        $parts       = Canonical-Id-Parse $feature
+        $featureRoot = Source-Registry-GetFeatureDir -SourceId $parts.SourceId
+        $featureDir  = Join-Path $featureRoot $parts.Name
+        $featureYaml = Join-Path $featureDir "feature.yaml"
+
+        if (-not (Test-Path $featureYaml)) {
+            Log-Error "Invoke-ValidateSpecVersions: feature.yaml not found: $featureYaml"
+            return $null
+        }
+
+        $raw         = & yq eval '.spec_version // 1' $featureYaml 2>$null
+        $specVersion = if ($raw -match '^\d+$') { [int]$raw } else { 1 }
+
+        if ($specVersion -gt $maxVer) {
+            Log-Warn "Blocked: $feature has unsupported spec_version $specVersion (max: $maxVer)"
+            $blocked += [PSCustomObject]@{
+                feature = $feature
+                reason  = "unsupported spec_version: $specVersion (max: $maxVer)"
+            }
+        } else {
+            $valid.Add($feature)
+        }
+    }
+
+    $blockedJson = if ($blocked.Count -eq 0) {
+        "[]"
+    } else {
+        $arr = $blocked | ConvertTo-Json -Compress -Depth 5
+        if ($blocked.Count -eq 1) { "[$arr]" } else { $arr }
+    }
+
+    return [PSCustomObject]@{
+        Valid       = $valid.ToArray()
+        BlockedJson = $blockedJson
+    }
+}
+
+# Invoke-PlanInjectBlocked <PlanJson> <BlockedExtraJson>
+# Inject additional pre-blocked features into plan JSON. Returns updated JSON string.
+function Invoke-PlanInjectBlocked {
+    param(
+        [Parameter(Mandatory=$true)] [string]$PlanJson,
+        [Parameter(Mandatory=$true)] [string]$BlockedExtraJson
+    )
+
+    if ([string]::IsNullOrWhiteSpace($BlockedExtraJson) -or $BlockedExtraJson -eq "[]") {
+        return $PlanJson
+    }
+
+    $result = $PlanJson | & jq --argjson extra $BlockedExtraJson '.blocked += $extra | .summary.blocked = (.blocked | length)'
+    return ($result -join "`n")
+}
+
 # ── Apply pipeline ────────────────────────────────────────────────────────────
 
 # Invoke-OrchestratorApply <ProfileFile>
 # Full apply pipeline. Entry point called by cmd/apply.ps1.
 #
 # Pipeline:
-#   load policy → State-Init → Read-Profile → Resolve-Dependencies
-#   → Invoke-PlannerRun → Invoke-ExecutorRun → Show-Summary
+#   load policy → State-Init → Read-Profile → Invoke-ValidateSpecVersions
+#   → Resolve-Dependencies → Invoke-PlannerRun → Invoke-PlanInjectBlocked
+#   → Invoke-ExecutorRun → Show-Summary
 function Invoke-OrchestratorApply {
     param(
         [Parameter(Mandatory=$true)]
@@ -335,14 +404,19 @@ function Invoke-OrchestratorApply {
     $desiredFeatures = Read-Profile -ProfileFile $ProfileFile
     if ($null -eq $desiredFeatures) { exit 1 }
 
-    # Resolve feature metadata + topological sort
-    if (-not (Read-FeatureMetadata -Features $desiredFeatures)) { exit 1 }
+    # Filter features by supported spec_version
+    $svResult = Invoke-ValidateSpecVersions -Features $desiredFeatures
+    if ($null -eq $svResult) { exit 1 }
 
-    $sortedFeatures = Resolve-Dependencies -DesiredFeatures $desiredFeatures
+    # Resolve feature metadata + topological sort (only valid features)
+    if (-not (Read-FeatureMetadata -Features $svResult.Valid)) { exit 1 }
+
+    $sortedFeatures = Resolve-Dependencies -DesiredFeatures $svResult.Valid
     if ($null -eq $sortedFeatures) { exit 1 }
 
     # Plan: pure computation of what needs to happen
     $planJson = Invoke-PlannerRun -ProfileFile $ProfileFile -SortedFeatures $sortedFeatures
+    $planJson = Invoke-PlanInjectBlocked -PlanJson $planJson -BlockedExtraJson $svResult.BlockedJson
 
     # Execute: impure — calls scripts, commits state
     Invoke-ExecutorRun -PlanJson $planJson

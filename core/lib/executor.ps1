@@ -11,7 +11,7 @@
 # Execution contract:
 #   - Blocked features in plan.blocked are reported and skipped.
 #   - Actions are executed in plan.actions order (destroy → replace → create).
-#   - For each action, executor reads meta.yaml to determine packages/runtimes/files.
+#   - For each action, executor reads feature.yaml to determine packages/runtimes/files.
 #   - On any failure: abort immediately with non-zero exit.
 #     Partial execution is left in place; state reflects what succeeded.
 #
@@ -26,7 +26,7 @@
 #   Feature scripts must NOT call State-RemoveFeature, State-AddPackage,
 #   Install-Package, Install-Runtime.
 #
-# meta.yaml package/runtime/files schema: see executor.sh for full docs.
+# feature.yaml package/runtime/files schema: see executor.sh for full docs.
 # -----------------------------------------------------------------------------
 
 Set-StrictMode -Version Latest
@@ -49,44 +49,44 @@ function _Executor-GetFeatureDir {
     return Join-Path $featureRoot $parts.Name
 }
 
-# _Executor-ResolveMeta <Feature>
-# Return base meta.yaml path. Throws if not found.
-function _Executor-ResolveMeta {
+# _Executor-ResolveFeature <Feature>
+# Return base feature.yaml path. Throws if not found.
+function _Executor-ResolveFeature {
     param([Parameter(Mandatory=$true)] [string]$Feature)
 
     $featureDir = _Executor-GetFeatureDir -Feature $Feature
-    $meta = Join-Path $featureDir "meta.yaml"
+    $meta = Join-Path $featureDir "feature.yaml"
     if (-not (Test-Path $meta)) {
-        Log-Error "_Executor-ResolveMeta: meta.yaml not found for: $Feature"
-        throw "meta.yaml not found: $meta"
+        Log-Error "_Executor-ResolveFeature: feature.yaml not found for: $Feature"
+        throw "feature.yaml not found: $meta"
     }
     return $meta
 }
 
-# _Executor-ResolvePlatformMeta <Feature>
-# Return platform-specific meta.yaml path, or $null if none exists.
-function _Executor-ResolvePlatformMeta {
+# _Executor-ResolvePlatformFeature <Feature>
+# Return platform-specific feature.yaml path, or $null if none exists.
+function _Executor-ResolvePlatformFeature {
     param([Parameter(Mandatory=$true)] [string]$Feature)
 
     $dir = _Executor-GetFeatureDir -Feature $Feature
 
     switch ($global:DOTFILES_PLATFORM) {
         "windows" {
-            $p = Join-Path $dir "meta.windows.yaml"
+            $p = Join-Path $dir "feature.windows.yaml"
             if (Test-Path $p) { return $p }
         }
         { $_ -in @("linux", "wsl") } {
-            $p = Join-Path $dir "meta.linux.yaml"
+            $p = Join-Path $dir "feature.linux.yaml"
             if (Test-Path $p) { return $p }
         }
     }
     return $null
 }
 
-# _Executor-GetPkgsFromMeta <MetaFile>
-# Return string[] of package names from a meta.yaml file.
+# _Executor-GetPkgsFromFeature <MetaFile>
+# Return string[] of package names from a feature.yaml file.
 # Supports string form ("tmux") and mapping form ({name: tmux, managed: false}).
-function _Executor-GetPkgsFromMeta {
+function _Executor-GetPkgsFromFeature {
     param([string]$MetaFile)
 
     if ([string]::IsNullOrWhiteSpace($MetaFile) -or -not (Test-Path $MetaFile)) {
@@ -107,8 +107,8 @@ function _Executor-PkgManaged {
         [Parameter(Mandatory=$true)] [string]$PkgName
     )
 
-    try { $metaFile = _Executor-ResolveMeta -Feature $Feature } catch { return $true }
-    $platformMeta = _Executor-ResolvePlatformMeta -Feature $Feature
+    try { $metaFile = _Executor-ResolveFeature -Feature $Feature } catch { return $true }
+    $platformMeta = _Executor-ResolvePlatformFeature -Feature $Feature
 
     foreach ($f in @($metaFile, $platformMeta)) {
         if ([string]::IsNullOrWhiteSpace($f) -or -not (Test-Path $f)) { continue }
@@ -122,7 +122,7 @@ function _Executor-PkgManaged {
 }
 
 # _Executor-GetRuntimesJson <MetaFile>
-# Return PSCustomObject[] of runtime entries from a meta.yaml file.
+# Return PSCustomObject[] of runtime entries from a feature.yaml file.
 function _Executor-GetRuntimesJson {
     param([string]$MetaFile)
 
@@ -137,7 +137,7 @@ function _Executor-GetRuntimesJson {
 }
 
 # _Executor-GetFilesJson <MetaFile>
-# Return PSCustomObject[] of file entry objects from a meta.yaml file.
+# Return PSCustomObject[] of file entry objects from a feature.yaml file.
 function _Executor-GetFilesJson {
     param([string]$MetaFile)
 
@@ -154,7 +154,7 @@ function _Executor-GetFilesJson {
 # ── Resource operations ───────────────────────────────────────────────────────
 
 # _Executor-ApplyPackages <Feature> <MetaFile> [<PlatformMetaFile>]
-# Install all packages declared in meta.yaml and add them to the active state patch.
+# Install all packages declared in feature.yaml and add them to the active state patch.
 # Skips packages where Backend-PackageExists returns true.
 function _Executor-ApplyPackages {
     param(
@@ -164,8 +164,8 @@ function _Executor-ApplyPackages {
     )
 
     $allPkgs  = @()
-    $allPkgs += _Executor-GetPkgsFromMeta -MetaFile $MetaFile
-    $allPkgs += _Executor-GetPkgsFromMeta -MetaFile $PlatformMetaFile
+    $allPkgs += _Executor-GetPkgsFromFeature -MetaFile $MetaFile
+    $allPkgs += _Executor-GetPkgsFromFeature -MetaFile $PlatformMetaFile
 
     # Deduplicate; guard against empty array producing blank entries
     $uniquePkgs = @($allPkgs | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Sort-Object -Unique)
@@ -198,8 +198,8 @@ function _Executor-ApplyPackages {
 }
 
 # _Executor-ApplyRuntimes <Feature> <MetaFile> [<PlatformMetaFile>] [<ConfigVersion>]
-# Install all runtimes declared in meta.yaml and add them to the active state patch.
-# Version resolution: explicit in meta.yaml > config_version from profile > "latest"
+# Install all runtimes declared in feature.yaml and add them to the active state patch.
+# Version resolution: explicit in feature.yaml > config_version from profile > "latest"
 function _Executor-ApplyRuntimes {
     param(
         [Parameter(Mandatory=$true)]  [string]$Feature,
@@ -289,7 +289,7 @@ function _Executor-TryJunction {
 }
 
 # _Executor-DeployFiles <Feature> <MetaFile> [<PlatformMetaFile>]
-# Deploy files declared in meta.yaml and add fs resources to the active state patch.
+# Deploy files declared in feature.yaml and add fs resources to the active state patch.
 # Supports op: link (symlink / junction with copy fallback) and op: copy.
 function _Executor-DeployFiles {
     param(
@@ -378,7 +378,7 @@ function _Executor-DeployFiles {
 # Removal order (reverse of install): files → runtimes → packages
 # Skip rules:
 #   - Resources with backend="unknown" are NOT backend-uninstalled (legacy / pre-Phase4)
-#   - Packages with managed:false in meta.yaml are NOT uninstalled
+#   - Packages with managed:false in feature.yaml are NOT uninstalled
 function _Executor-RemoveResources {
     param([Parameter(Mandatory=$true)] [string]$Feature)
 
@@ -415,7 +415,7 @@ function _Executor-RemoveResources {
     }
 
     # 3. Uninstall managed packages (backend != "unknown", managed != false)
-    # use $Feature (canonical) for unmanaged check — passes to ResolveMeta which strips prefix
+    # use $Feature (canonical) for unmanaged check — passes to ResolveFeature which strips prefix
     foreach ($res in ($resources | Where-Object { $_.kind -eq "package" })) {
         $backend = if ($res.PSObject.Properties['backend'] -and $res.backend) {
             $res.backend } else { "unknown" }
@@ -480,7 +480,7 @@ function _Executor-RunScript {
 # Full install pipeline:
 #   1. Resolve meta files
 #   2. State-PatchBegin
-#   3. Install packages/runtimes/files from meta.yaml → state patch
+#   3. Install packages/runtimes/files from feature.yaml → state patch
 #   4. State-PatchFinalize
 #   5. Run install.ps1 (for secondary setup)
 function _Executor-Install {
@@ -492,8 +492,8 @@ function _Executor-Install {
     Log-Info "Installing: $Feature"
 
     $featureDir = _Executor-GetFeatureDir -Feature $Feature
-    $metaFile     = _Executor-ResolveMeta -Feature $Feature
-    $platformMeta = _Executor-ResolvePlatformMeta -Feature $Feature
+    $metaFile     = _Executor-ResolveFeature -Feature $Feature
+    $platformMeta = _Executor-ResolvePlatformFeature -Feature $Feature
     if ($null -eq $platformMeta) { $platformMeta = "" }
 
     State-PatchBegin

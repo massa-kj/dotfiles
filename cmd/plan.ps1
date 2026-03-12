@@ -183,10 +183,14 @@ if (-not (State-Init)) {
 $desiredFeatures = Read-Profile -ProfileFile $ProfileFile
 if ($null -eq $desiredFeatures) { exit 1 }
 
-# Resolve feature metadata + topological sort
-if (-not (Read-FeatureMetadata -Features $desiredFeatures)) { exit 1 }
+# Filter features by supported spec_version
+$_svResult = Invoke-ValidateSpecVersions -Features $desiredFeatures
+if ($null -eq $_svResult) { exit 1 }
 
-$sortedFeatures = Resolve-Dependencies -DesiredFeatures $desiredFeatures
+# Resolve feature metadata + topological sort (only valid features)
+if (-not (Read-FeatureMetadata -Features $_svResult.Valid)) { exit 1 }
+
+$sortedFeatures = Resolve-Dependencies -DesiredFeatures $_svResult.Valid
 if ($null -eq $sortedFeatures) { exit 1 }
 
 # Plan: pure computation — no state writes
@@ -195,6 +199,7 @@ if (-not $planJson) {
     Log-Error "Planner failed to produce a plan"
     exit 1
 }
+$planJson = Invoke-PlanInjectBlocked -PlanJson $planJson -BlockedExtraJson $_svResult.BlockedJson
 
 # Display
 Format-Plan -PlanJson $planJson -Profile $ProfileFile -ShowNoop $Verbose.IsPresent

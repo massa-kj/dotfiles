@@ -1,0 +1,9 @@
+depends: []
+
+packages:
+  - 7zip
+  - fd
+  - fzf
+  - gcc
+  - ghq
+  - ripgrep

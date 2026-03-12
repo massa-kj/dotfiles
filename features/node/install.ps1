@@ -22,7 +22,7 @@ $Version = if ($env:DOTFILES_FEATURE_CONFIG_VERSION) {
 }
 Log-Info "Target Node.js version: $Version"
 
-# Runtime installation is handled by executor (declared in meta.yaml).
+# Runtime installation is handled by executor (declared in feature.yaml).
 # npm global packages are managed by the separate `npm` feature.
 
 Log-Success "Feature $FeatureName installed successfully"

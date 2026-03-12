@@ -1,0 +1,5 @@
+spec_version: 1
+mode: script
+description: VS Code portable installation via vscode-portable (Windows)
+depends:
+  - git

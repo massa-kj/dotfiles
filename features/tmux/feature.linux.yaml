@@ -1,0 +1,9 @@
+depends: []
+
+packages:
+  - tmux
+
+files:
+  - src: .tmux.conf
+    target: ~/.tmux.conf
+    op: link

@@ -14,8 +14,8 @@ FEATURE_NAME="mise"
 
 log_task "Installing feature: $FEATURE_NAME"
 
-# mise package installation is handled by executor (declared in meta.yaml packages).
-# Config files are handled by executor (declared in meta.yaml files).
+# mise package installation is handled by executor (declared in feature.yaml packages).
+# Config files are handled by executor (declared in feature.yaml files).
 
 if has_command "mise"; then
     log_info "mise is available"

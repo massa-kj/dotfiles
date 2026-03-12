@@ -49,6 +49,11 @@ dotfiles_state_file_path() {
 DOTFILES_FEATURES_DIR="${DOTFILES_ROOT}/features"
 export DOTFILES_FEATURES_DIR
 
+# Maximum supported spec_version in feature.yaml.
+# Features with a higher spec_version are classified as blocked.
+SUPPORTED_FEATURE_SPEC_VERSION=1
+export SUPPORTED_FEATURE_SPEC_VERSION
+
 # Profiles directory (override allowed)
 if [[ -z "${DOTFILES_PROFILES_DIR:-}" ]]; then
     DOTFILES_PROFILES_DIR="${DOTFILES_CONFIG_HOME}/profiles"

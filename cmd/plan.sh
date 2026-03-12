@@ -221,14 +221,22 @@ state_init
 declare -a _plan_features
 read_profile "$PROFILE_FILE" _plan_features || exit 1
 
+# Validate spec_versions: features with unsupported spec_version are pre-blocked
+declare -a _plan_valid_features
+_plan_sv_blocked=""
+_validate_spec_versions _plan_features _plan_valid_features _plan_sv_blocked || exit 1
+
 # Resolve feature metadata + topological sort
-read_feature_metadata _plan_features || exit 1
+read_feature_metadata _plan_valid_features || exit 1
 
 declare -a _plan_sorted
-resolve_dependencies _plan_features _plan_sorted || exit 1
+resolve_dependencies _plan_valid_features _plan_sorted || exit 1
 
 # Plan: pure computation — no state writes
 plan_json=$(planner_run "$PROFILE_FILE" _plan_sorted) || exit 1
+
+# Inject spec_version-blocked features into plan output
+plan_json=$(_plan_inject_blocked "$plan_json" "$_plan_sv_blocked")
 
 # Display
 _plan_print "$plan_json" "$PROFILE_FILE" "$VERBOSE"
