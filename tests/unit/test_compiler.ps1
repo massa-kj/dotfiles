@@ -1,9 +1,10 @@
 # -----------------------------------------------------------------------------
 # Unit tests: compiler (FeatureCompiler, PowerShell)
 #
-# Tests that Invoke-FeatureCompilerRun produces correct DesiredResourceGraph
+# Tests that Invoke-FeatureCompilerRun produces correct raw DesiredResourceGraph
 # JSON for both script and declarative features, and enforces declarative
-# invariants.
+# invariants. The compiler only assigns stable resource IDs; desired_backend
+# is NOT present in the output (PolicyResolver adds that in a subsequent step).
 #
 # Run directly: pwsh tests/unit/test_compiler.ps1
 # Exit code 0 = all pass, 1 = one or more failures.
@@ -45,14 +46,6 @@ sources: []
 "@ | Set-Content -Path $env:DOTFILES_SOURCES_FILE -Encoding UTF8
 
 . "$REPO_ROOT\core\lib\source_registry.ps1"
-
-# Stub Resolve-BackendFor before loading compiler (prevents backend_registry.ps1 load)
-function Resolve-BackendFor {
-    param([string]$Kind, [string]$Name)
-    return "stub_backend"
-}
-# Stub Backend-Registry-LoadPolicy (referenced indirectly)
-function Backend-Registry-LoadPolicy { return }
 
 . "$REPO_ROOT\core\lib\compiler.ps1"
 
@@ -129,9 +122,9 @@ Assert-NotNull "core/scriptfeat present in DRG" $scriptFeatEntry
 $resCount = if ($scriptFeatEntry.resources) { $scriptFeatEntry.resources.Count } else { 0 }
 Assert-Equal "script feature has 0 resources" "0" "$resCount"
 
-# ── Test: mode:declarative → resources expanded with id + desired_backend ─────
+# ── Test: mode:declarative → resources expanded with stable id (no desired_backend) ──
 
-Write-Host "Invoke-FeatureCompilerRun: mode:declarative expands resources"
+Write-Host "Invoke-FeatureCompilerRun: mode:declarative expands resources with stable id"
 
 $declResources = @(
     [ordered]@{ kind = "package"; name = "ripgrep" }
@@ -148,8 +141,10 @@ $resCountDecl = $declFeat.resources.Count
 Assert-Equal "declarative feature has 1 resource" "1" "$resCountDecl"
 $resId      = $declFeat.resources[0].id
 Assert-Equal "resource id is package:ripgrep" "package:ripgrep" "$resId"
-$resBackend = $declFeat.resources[0].desired_backend
-Assert-Equal "resource desired_backend is stub_backend" "stub_backend" "$resBackend"
+
+# Compiler must NOT embed desired_backend (that is PolicyResolver's job)
+$resBackendProp = $declFeat.resources[0].PSObject.Properties["desired_backend"]
+Assert-Null "compiler does not embed desired_backend" $resBackendProp
 
 # ── Test: mode:declarative with no resources → error ($null) ──────────────────
 

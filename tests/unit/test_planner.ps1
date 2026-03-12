@@ -5,6 +5,9 @@
 # classification case: create, destroy, noop (script), noop (identical),
 # replace, replace_backend, strengthen, blocked, runtime version cases, mixed.
 #
+# DRG fixtures use the RRG format (desired_backend present in resources).
+# Version comparison uses a profile YAML file passed to Invoke-PlannerRun.
+#
 # Run directly: pwsh tests/unit/test_planner.ps1
 # Exit code 0 = all pass, 1 = one or more failures.
 # -----------------------------------------------------------------------------
@@ -15,6 +18,12 @@ $ErrorActionPreference = "Stop"
 $REPO_ROOT = (Get-Item "$PSScriptRoot/../..").FullName
 
 . "$PSScriptRoot\helpers.ps1"
+
+# ── Setup: temp directory for profile YAML files ───────────────────────────────
+
+$TmpPlannerDir = [System.IO.Path]::GetTempPath() + [System.IO.Path]::GetRandomFileName()
+New-Item -ItemType Directory -Path $TmpPlannerDir -Force | Out-Null
+try {
 
 # ── State stubs ───────────────────────────────────────────────────────────────
 #
@@ -219,34 +228,48 @@ Assert-Blocked "blocked(state unknown): in blocked list"   "user/legacy" $plan
 Assert-Summary "blocked(state unknown): summary.blocked=1" "blocked"  1  $plan
 
 # ---------------------------------------------------------------------------
-# 11. runtime: version mismatch → replace
+# 11. runtime: version mismatch → replace  (version read from profile file)
 # ---------------------------------------------------------------------------
 Write-Host ""
 Write-Host "── runtime version mismatch → replace ─────────────────────────"
 
+$_profileV11 = Join-Path $TmpPlannerDir "profile_v11.yaml"
+@"
+features:
+  tools/node:
+    version: "20.0.0"
+"@ | Set-Content -Path $_profileV11 -Encoding UTF8
+
 $script:TestStateJson = '{"version":3,"features":{"tools/node":{"resources":[{"kind":"runtime","id":"rt:node","backend":"mise","runtime":{"name":"node","version":"18.0.0"}}]}}}'
-$drg = '{"schema_version":1,"features":{"tools/node":{"resources":[{"kind":"runtime","name":"node","id":"rt:node","desired_backend":"mise","version":"20.0.0"}]}}}'
-$plan = Invoke-PlannerRun -DrgJson $drg -SortedFeatures @("tools/node")
+$drg = '{"schema_version":1,"features":{"tools/node":{"resources":[{"kind":"runtime","name":"node","id":"rt:node","desired_backend":"mise"}]}}}'
+$plan = Invoke-PlannerRun -DrgJson $drg -SortedFeatures @("tools/node") -ProfileFile $_profileV11
 
 Assert-Operation "runtime version mismatch: action=replace" "tools/node" "replace" $plan
 
 # ---------------------------------------------------------------------------
-# 12. runtime: version match → noop
+# 12. runtime: version match → noop  (version read from profile file)
 # ---------------------------------------------------------------------------
 Write-Host ""
 Write-Host "── runtime version match → noop ───────────────────────────────"
 
+$_profileV12 = Join-Path $TmpPlannerDir "profile_v12.yaml"
+@"
+features:
+  tools/node:
+    version: "20.0.0"
+"@ | Set-Content -Path $_profileV12 -Encoding UTF8
+
 $script:TestStateJson = '{"version":3,"features":{"tools/node":{"resources":[{"kind":"runtime","id":"rt:node","backend":"mise","runtime":{"name":"node","version":"20.0.0"}}]}}}'
-$drg = '{"schema_version":1,"features":{"tools/node":{"resources":[{"kind":"runtime","name":"node","id":"rt:node","desired_backend":"mise","version":"20.0.0"}]}}}'
-$plan = Invoke-PlannerRun -DrgJson $drg -SortedFeatures @("tools/node")
+$drg = '{"schema_version":1,"features":{"tools/node":{"resources":[{"kind":"runtime","name":"node","id":"rt:node","desired_backend":"mise"}]}}}'
+$plan = Invoke-PlannerRun -DrgJson $drg -SortedFeatures @("tools/node") -ProfileFile $_profileV12
 
 Assert-Noop "runtime version match: noop" "tools/node" $plan
 
 # ---------------------------------------------------------------------------
-# 13. runtime: no version in desired → noop (no version constraint)
+# 13. runtime: no version in profile → noop (no version constraint)
 # ---------------------------------------------------------------------------
 Write-Host ""
-Write-Host "── runtime no version in desired → noop ───────────────────────"
+Write-Host "── runtime no version in profile → noop ───────────────────────"
 
 $script:TestStateJson = '{"version":3,"features":{"tools/python":{"resources":[{"kind":"runtime","id":"rt:python","backend":"mise","runtime":{"name":"python","version":"3.11.0"}}]}}}'
 $drg = '{"schema_version":1,"features":{"tools/python":{"resources":[{"kind":"runtime","name":"python","id":"rt:python","desired_backend":"mise"}]}}}'
@@ -275,3 +298,7 @@ Assert-Summary   "mixed: summary.noop=1"       "noop"     1          $plan
 
 Write-Host ""
 Show-TestSummary
+
+} finally {
+    Remove-Item -Recurse -Force $TmpPlannerDir -ErrorAction SilentlyContinue
+}
