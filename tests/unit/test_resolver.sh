@@ -28,6 +28,7 @@ mkdir -p "$DOTFILES_CONFIG_HOME/features" "$DOTFILES_CONFIG_HOME/backends"
 mkdir -p "$DOTFILES_DATA_HOME/sources"
 
 source "$REPO_ROOT/core/lib/source_registry.sh"
+source "$REPO_ROOT/core/lib/feature_index.sh"
 source "$REPO_ROOT/core/lib/resolver.sh"
 
 # ── Setup: temp feature directory ────────────────────────────────────────────
@@ -128,7 +129,9 @@ EOF
 echo "resolve_dependencies: canonical ID output"
 
 declare -a test_features=("core/alpha" "core/beta" "core/gamma")
-read_feature_metadata test_features 2>/dev/null
+_test_index_1=""
+feature_index_build _test_index_1 2>/dev/null
+read_feature_metadata "$_test_index_1" test_features 2>/dev/null
 
 declare -a sorted_output
 resolve_dependencies test_features sorted_output 2>/dev/null
@@ -187,7 +190,9 @@ declare -a single_feat=("core/beta")
 _RESOLVER_FEATURE_DEPS=()
 _RESOLVER_PROVIDES=()
 _RESOLVER_REQUIRES=()
-read_feature_metadata single_feat 2>/dev/null
+_test_index_2=""
+feature_index_build _test_index_2 2>/dev/null
+read_feature_metadata "$_test_index_2" single_feat 2>/dev/null
 
 # "beta" depends on bare name "alpha" -> should be normalized to "core/alpha"
 _assert_eq \
@@ -203,7 +208,9 @@ declare -a cap_features=("core/provider" "core/consumer")
 _RESOLVER_FEATURE_DEPS=()
 _RESOLVER_PROVIDES=()
 _RESOLVER_REQUIRES=()
-read_feature_metadata cap_features 2>/dev/null
+_test_index_3=""
+feature_index_build _test_index_3 2>/dev/null
+read_feature_metadata "$_test_index_3" cap_features 2>/dev/null
 
 _assert_eq \
     "provider stored as canonical ID in PROVIDES" \
@@ -231,7 +238,9 @@ declare -a single=("core/alpha")
 _RESOLVER_FEATURE_DEPS=()
 _RESOLVER_PROVIDES=()
 _RESOLVER_REQUIRES=()
-read_feature_metadata single 2>/dev/null
+_test_index_4=""
+feature_index_build _test_index_4 2>/dev/null
+read_feature_metadata "$_test_index_4" single 2>/dev/null
 declare -a single_sorted
 resolve_dependencies single single_sorted 2>/dev/null
 
@@ -257,7 +266,9 @@ declare -a orphan_features=("core/orphan")
 _RESOLVER_FEATURE_DEPS=()
 _RESOLVER_PROVIDES=()
 _RESOLVER_REQUIRES=()
-read_feature_metadata orphan_features 2>/dev/null || true
+_test_index_5=""
+feature_index_build _test_index_5 2>/dev/null
+read_feature_metadata "$_test_index_5" orphan_features 2>/dev/null || true
 declare -a orphan_sorted
 _assert_return1 \
     "missing dep causes resolve_dependencies to fail" \
@@ -274,7 +285,9 @@ declare -a real_features=("core/git" "core/bash")
 _RESOLVER_FEATURE_DEPS=()
 _RESOLVER_PROVIDES=()
 _RESOLVER_REQUIRES=()
-read_feature_metadata real_features 2>/dev/null
+_test_index_6=""
+feature_index_build _test_index_6 2>/dev/null
+read_feature_metadata "$_test_index_6" real_features 2>/dev/null
 
 declare -a real_sorted
 resolve_dependencies real_features real_sorted 2>/dev/null
@@ -317,9 +330,15 @@ _RESOLVER_FEATURE_DEPS=()
 _RESOLVER_PROVIDES=()
 _RESOLVER_REQUIRES=()
 
+# Phase 2: allow-list enforcement moved to resolution time.
+# ext/blocked is not in the desired feature set → resolve_dependencies fails.
+_test_index_7=""
+feature_index_build _test_index_7 2>/dev/null
+read_feature_metadata "$_test_index_7" ext_parent 2>/dev/null
+declare -a ext_parent_sorted
 _assert_return1 \
         "disallowed external dependency is rejected" \
-        read_feature_metadata ext_parent
+        resolve_dependencies ext_parent ext_parent_sorted
 
 # ── Test: external and user sources resolve directories ──────────────────────
 
@@ -330,7 +349,9 @@ _RESOLVER_FEATURE_DEPS=()
 _RESOLVER_PROVIDES=()
 _RESOLVER_REQUIRES=()
 
-read_feature_metadata multi_source_features 2>/dev/null || true
+_test_index_8=""
+feature_index_build _test_index_8 2>/dev/null
+read_feature_metadata "$_test_index_8" multi_source_features 2>/dev/null || true
 
 declare -a multi_sorted
 _assert_return0 \

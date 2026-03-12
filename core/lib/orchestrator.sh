@@ -27,6 +27,18 @@ if [[ "$(type -t canonical_id_normalize)" != "function" ]]; then
     source "${DOTFILES_ROOT}/core/lib/source_registry.sh"
 fi
 
+# Lazily source feature_index if not already loaded
+if [[ "$(type -t feature_index_build)" != "function" ]]; then
+    # shellcheck source=core/lib/feature_index.sh
+    source "${DOTFILES_ROOT}/core/lib/feature_index.sh"
+fi
+
+# Lazily source compiler if not already loaded
+if [[ "$(type -t feature_compiler_run)" != "function" ]]; then
+    # shellcheck source=core/lib/compiler.sh
+    source "${DOTFILES_ROOT}/core/lib/compiler.sh"
+fi
+
 # Lazily source resolver if not already loaded
 if [[ "$(type -t read_feature_metadata)" != "function" ]]; then
     # shellcheck source=core/lib/resolver.sh
@@ -273,51 +285,6 @@ print_summary() {
     echo ""
 }
 
-# ── Spec version validation ───────────────────────────────────────────────────
-
-# _validate_spec_versions <features_nameref> <valid_nameref> <blocked_json_nameref>
-# Check spec_version for each feature in features.
-# Features with spec_version > SUPPORTED_FEATURE_SPEC_VERSION are moved out of
-# the valid list and recorded in blocked_json as a JSON array string.
-#
-# This is a simplified Phase 1 check. Phase 2 (Feature Index Builder) will
-# own spec_version validation as part of full feature discovery.
-_validate_spec_versions() {
-    local -n _vsv_features="$1"
-    local -n _vsv_valid="$2"
-    local -n _vsv_blocked_json="$3"
-
-    _vsv_valid=()
-    _vsv_blocked_json="[]"
-
-    for feature in "${_vsv_features[@]}"; do
-        local source_id feat_name
-        canonical_id_parse "$feature" source_id feat_name || return 1
-
-        local feature_dir
-        feature_dir=$(source_registry_get_feature_dir "$source_id") || return 1
-        local feature_yaml="${feature_dir}/${feat_name}/feature.yaml"
-
-        if [[ ! -f "$feature_yaml" ]]; then
-            log_error "_validate_spec_versions: feature.yaml not found: $feature_yaml"
-            return 1
-        fi
-
-        local spec_version
-        spec_version=$(yq eval '.spec_version // 1' "$feature_yaml" 2>/dev/null)
-
-        if [[ "$spec_version" -gt "${SUPPORTED_FEATURE_SPEC_VERSION:-1}" ]]; then
-            log_warn "Blocked: $feature has unsupported spec_version $spec_version (max: ${SUPPORTED_FEATURE_SPEC_VERSION:-1})"
-            _vsv_blocked_json=$(echo "$_vsv_blocked_json" | jq \
-                --arg f "$feature" \
-                --arg r "unsupported spec_version: $spec_version (max: ${SUPPORTED_FEATURE_SPEC_VERSION:-1})" \
-                '. + [{"feature": $f, "reason": $r}]')
-        else
-            _vsv_valid+=("$feature")
-        fi
-    done
-}
-
 # _plan_inject_blocked <plan_json> <blocked_extra_json>
 # Inject additional pre-blocked features into plan JSON.
 # Prints the updated plan JSON to stdout.
@@ -366,16 +333,24 @@ orchestrator_apply() {
     local -a _apply_features
     read_profile "$profile_file" _apply_features || return 1
 
-    # Validate spec_versions: features with unsupported spec_version are pre-blocked
+    # Build Feature Index: scans all registered sources, enriches with metadata
+    local _apply_index
+    feature_index_build _apply_index || return 1
+
+    # Filter desired features: separates valid from spec_version-blocked
     local -a _apply_valid_features
     local _apply_sv_blocked
-    _validate_spec_versions _apply_features _apply_valid_features _apply_sv_blocked || return 1
+    feature_index_filter "$_apply_index" _apply_features _apply_valid_features _apply_sv_blocked || return 1
 
-    # Resolve feature metadata + topological sort (use valid features only)
-    read_feature_metadata _apply_valid_features || return 1
+    # Resolve feature metadata from index (no file I/O) + topological sort
+    read_feature_metadata "$_apply_index" _apply_valid_features || return 1
 
     local -a _apply_sorted
     resolve_dependencies _apply_valid_features _apply_sorted || return 1
+
+    # Compile DesiredResourceGraph (used by planner in Phase 3)
+    local _apply_drg
+    _apply_drg=$(feature_compiler_run "$_apply_index" _apply_sorted) || return 1
 
     # Plan: pure computation of what needs to happen
     local plan_json

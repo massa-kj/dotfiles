@@ -304,6 +304,20 @@ source_registry_get_backend_dir() {
     echo "${_SR_BACKEND_DIRS[$source_id]}"
 }
 
+# source_registry_list_sources <output_nameref>
+# Populate output_nameref with all registered source IDs.
+source_registry_list_sources() {
+    local -n _srl_out="$1"
+    _source_registry_ensure_loaded || return 1
+    _srl_out=()
+    local id
+    for id in "${!_SR_SOURCE_TYPES[@]}"; do
+        _srl_out+=("$id")
+    done
+    # Sort for deterministic order (core first, then rest)
+    mapfile -t _srl_out < <(printf '%s\n' "${_srl_out[@]}" | sort)
+}
+
 # _source_registry_is_allowed_kind <source_id> <name> <kind>
 _source_registry_is_allowed_kind() {
     local source_id="$1"

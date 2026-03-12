@@ -27,6 +27,9 @@ source "$DOTFILES_ROOT/core/lib/env.sh"
 source "$DOTFILES_ROOT/core/lib/logger.sh"
 source "$DOTFILES_ROOT/core/lib/state.sh"
 source "$DOTFILES_ROOT/core/lib/runner.sh"
+source "$DOTFILES_ROOT/core/lib/source_registry.sh"
+source "$DOTFILES_ROOT/core/lib/feature_index.sh"
+source "$DOTFILES_ROOT/core/lib/compiler.sh"
 source "$DOTFILES_ROOT/core/lib/resolver.sh"
 source "$DOTFILES_ROOT/core/lib/orchestrator.sh"
 
@@ -221,13 +224,17 @@ state_init
 declare -a _plan_features
 read_profile "$PROFILE_FILE" _plan_features || exit 1
 
-# Validate spec_versions: features with unsupported spec_version are pre-blocked
+# Build Feature Index: scans all registered sources, enriches with metadata
+_plan_index=""
+feature_index_build _plan_index || exit 1
+
+# Filter desired features: separates valid from spec_version-blocked
 declare -a _plan_valid_features
 _plan_sv_blocked=""
-_validate_spec_versions _plan_features _plan_valid_features _plan_sv_blocked || exit 1
+feature_index_filter "$_plan_index" _plan_features _plan_valid_features _plan_sv_blocked || exit 1
 
-# Resolve feature metadata + topological sort
-read_feature_metadata _plan_valid_features || exit 1
+# Resolve feature metadata from index (no file I/O) + topological sort
+read_feature_metadata "$_plan_index" _plan_valid_features || exit 1
 
 declare -a _plan_sorted
 resolve_dependencies _plan_valid_features _plan_sorted || exit 1

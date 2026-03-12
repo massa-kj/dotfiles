@@ -8,13 +8,12 @@
 #
 # Public API (Stable):
 #   resolve_dependencies <desired_features> <output_array>
-#   read_feature_metadata <features>
+#   read_feature_metadata <feature_index_json> <features_nameref>
 #
-# Input/output format (Phase 2+):
+# Input/output format:
 #   All feature identifiers are canonical IDs of the form "<source_id>/<name>".
-#   Bare names in profile are normalized upstream (orchestrator.read_profile).
-#   Bare names in feature.yaml depends[] are normalized here using the feature's own
-#   source_id as the default (same-source dependency rule).
+#   Dependency data is read exclusively from the Feature Index (feature_index.sh).
+#   Resolver does NOT read feature.yaml or any other file directly.
 # -----------------------------------------------------------------------------
 
 # This library expects core/env.sh, core/lib/logger.sh, and
@@ -41,171 +40,80 @@ declare -g -a _RESOLVER_SORTED
 declare -g -A _RESOLVER_PROVIDES  # capability -> "feature1 feature2 ..."
 declare -g -A _RESOLVER_REQUIRES  # feature -> "cap1 cap2 ..."
 
-# _resolver_feature_dir <feature>
-_resolver_feature_dir() {
-    local feature="$1"
-    local source_id name
-    canonical_id_parse "$feature" source_id name || return 1
-
-    local feature_dir_root
-    feature_dir_root=$(source_registry_get_feature_dir "$source_id") || return 1
-    echo "${feature_dir_root}/${name}"
-}
-
-# _resolver_platform_feature_file <feature>
-# Print the path to the platform-specific feature file, or empty string if none.
-# <feature> may be a canonical ID ("core/git") or a bare name; both are handled.
-_resolver_platform_feature_file() {
-    local feature="$1"
-    local feature_dir
-    feature_dir=$(_resolver_feature_dir "$feature") || return 1
-    if [[ "$DOTFILES_PLATFORM" == "wsl" ]]; then
-        if [[ -f "$feature_dir/feature.wsl.yaml" ]]; then
-            echo "$feature_dir/feature.wsl.yaml"
-            return 0
-        elif [[ -f "$feature_dir/feature.linux.yaml" ]]; then
-            echo "$feature_dir/feature.linux.yaml"
-            return 0
-        fi
-    elif [[ "$DOTFILES_PLATFORM" == "linux" ]]; then
-        if [[ -f "$feature_dir/feature.linux.yaml" ]]; then
-            echo "$feature_dir/feature.linux.yaml"
-            return 0
-        fi
-    else
-        if [[ -f "$feature_dir/feature.${DOTFILES_PLATFORM}.yaml" ]]; then
-            echo "$feature_dir/feature.${DOTFILES_PLATFORM}.yaml"
-            return 0
-        fi
-    fi
-    echo ""
-    return 0
-}
-
-# read_feature_metadata <features>
-# Read dependency metadata from feature.yaml files for all features.
-# <features> must contain canonical IDs (e.g. "core/git", "user/myfeat").
-# Bare names in feature.yaml depends[] are normalized to same-source canonical IDs.
+# read_feature_metadata <feature_index_json> <features_nameref>
+# Populate resolver globals from the Feature Index.
+# Reads dep fields exclusively from the Feature Index JSON — does NOT touch
+# feature.yaml or any filesystem file.
 #
 # Populates:
 #   _RESOLVER_FEATURE_DEPS  – canonical depends per feature
 #   _RESOLVER_PROVIDES      – capability -> canonical features that provide it
 #   _RESOLVER_REQUIRES      – canonical feature -> required capabilities
 read_feature_metadata() {
-    local -n features=$1
+    local feature_index_json="$1"
+    local -n features="$2"
 
     _RESOLVER_FEATURE_DEPS=()
     _RESOLVER_PROVIDES=()
     _RESOLVER_REQUIRES=()
 
-    source_registry_load || return 1
-
     log_info "Reading feature metadata..."
+    local feature
     for feature in "${features[@]}"; do
-        local source_id feat_name
-        canonical_id_parse "$feature" source_id feat_name || {
-            log_error "read_feature_metadata: invalid feature id: $feature"
-            return 1
-        }
+        local entry
+        entry=$(printf '%s' "$feature_index_json" \
+            | jq -r --arg id "$feature" '.features[$id] // "null"')
 
-        if ! source_registry_is_allowed "$source_id" "$feat_name"; then
-            log_error "read_feature_metadata: feature is not allowed by source registry: $feature"
+        if [[ "$entry" == "null" ]]; then
+            log_error "read_feature_metadata: feature not found in index: $feature"
             return 1
         fi
-
-        local feature_dir
-        feature_dir=$(_resolver_feature_dir "$feature") || return 1
-        local feature_file="$feature_dir/feature.yaml"
-
-        if [[ ! -f "$feature_file" ]]; then
-            log_error "feature.yaml not found: $feature_file (feature: $feature)"
-            return 1
-        fi
-
-        local platform_feature_file
-        platform_feature_file=$(_resolver_platform_feature_file "$feature")
 
         # ── depends ─────────────────────────────────────────────────────────
-        local raw_deps
-        mapfile -t raw_deps < <(yq eval '.depends[]' "$feature_file" 2>/dev/null || true)
+        local dep_arr=()
+        local dep
+        while IFS= read -r dep; do
+            [[ -z "$dep" || "$dep" == "null" ]] && continue
+            dep_arr+=("$dep")
+        done < <(printf '%s' "$entry" | jq -r '.dep.depends[]' 2>/dev/null || true)
 
-        if [[ -n "$platform_feature_file" ]]; then
-            local platform_deps
-            mapfile -t platform_deps < <(yq eval '.depends[]' "$platform_feature_file" 2>/dev/null || true)
-            raw_deps+=("${platform_deps[@]}")
-        fi
-
-        # Normalize each dep to a canonical ID using this feature's source_id as default.
-        # Bare dep names are treated as same-source ("core/mise" for a dep "mise" in "core/neovim").
-        # Explicit canonical IDs ("user/foo") are passed through unchanged.
-        local canonical_deps=()
-        local dep canonical_dep
-        for dep in "${raw_deps[@]}"; do
-            [[ -z "$dep" ]] && continue
-            canonical_dep=$(canonical_id_normalize "$dep" "$source_id") || {
-                log_error "read_feature_metadata: invalid depends entry '$dep' in $feature"
-                return 1
-            }
-
-            local dep_source dep_name
-            canonical_id_parse "$canonical_dep" dep_source dep_name || return 1
-            if ! source_registry_is_allowed "$dep_source" "$dep_name"; then
-                log_error "read_feature_metadata: dependency is not allowed by source registry: $canonical_dep (declared by $feature)"
-                return 1
-            fi
-
-            canonical_deps+=("$canonical_dep")
-        done
-
-        # Deduplicate
-        local unique_deps
-        mapfile -t unique_deps < <(printf '%s\n' "${canonical_deps[@]}" | sort -u | awk 'NF')
-        _RESOLVER_FEATURE_DEPS["$feature"]="${unique_deps[*]}"
+        mapfile -t dep_arr < <(printf '%s\n' "${dep_arr[@]:-}" | sort -u | awk 'NF')
+        _RESOLVER_FEATURE_DEPS["$feature"]="${dep_arr[*]:-}"
 
         # ── provides ────────────────────────────────────────────────────────
-        local provides
-        mapfile -t provides < <(yq eval '.provides[].name' "$feature_file" 2>/dev/null || true)
-
-        if [[ -n "$platform_feature_file" ]]; then
-            local platform_provides
-            mapfile -t platform_provides < <(yq eval '.provides[].name' "$platform_feature_file" 2>/dev/null || true)
-            provides+=("${platform_provides[@]}")
-        fi
-
-        for cap in "${provides[@]}"; do
-            [[ -z "$cap" ]] && continue
+        local prov_arr=()
+        local cap
+        while IFS= read -r cap; do
+            [[ -z "$cap" || "$cap" == "null" ]] && continue
+            prov_arr+=("$cap")
             if [[ -n "${_RESOLVER_PROVIDES[$cap]:-}" ]]; then
                 _RESOLVER_PROVIDES["$cap"]+=" $feature"
             else
                 _RESOLVER_PROVIDES["$cap"]="$feature"
             fi
-        done
+        done < <(printf '%s' "$entry" | jq -r '.dep.provides[].name' 2>/dev/null || true)
 
         # ── requires ────────────────────────────────────────────────────────
-        local requires
-        mapfile -t requires < <(yq eval '.requires[].name' "$feature_file" 2>/dev/null || true)
+        local req_arr=()
+        while IFS= read -r cap; do
+            [[ -z "$cap" || "$cap" == "null" ]] && continue
+            req_arr+=("$cap")
+        done < <(printf '%s' "$entry" | jq -r '.dep.requires[].name' 2>/dev/null || true)
 
-        if [[ -n "$platform_feature_file" ]]; then
-            local platform_requires
-            mapfile -t platform_requires < <(yq eval '.requires[].name' "$platform_feature_file" 2>/dev/null || true)
-            requires+=("${platform_requires[@]}")
-        fi
-
-        local unique_requires
-        mapfile -t unique_requires < <(printf '%s\n' "${requires[@]}" | sort -u | awk 'NF')
-        _RESOLVER_REQUIRES["$feature"]="${unique_requires[*]}"
+        mapfile -t req_arr < <(printf '%s\n' "${req_arr[@]:-}" | sort -u | awk 'NF')
+        _RESOLVER_REQUIRES["$feature"]="${req_arr[*]:-}"
 
         # ── log ─────────────────────────────────────────────────────────────
-        if [[ ${#unique_deps[@]} -gt 0 ]]; then
-            log_info "  $feature depends on: ${unique_deps[*]}"
+        if [[ ${#dep_arr[@]} -gt 0 ]]; then
+            log_info "  $feature depends on: ${dep_arr[*]}"
         fi
-        if [[ ${#provides[@]} -gt 0 ]]; then
-            log_info "  $feature provides: ${provides[*]}"
+        if [[ ${#prov_arr[@]} -gt 0 ]]; then
+            log_info "  $feature provides: ${prov_arr[*]}"
         fi
-        if [[ ${#unique_requires[@]} -gt 0 ]]; then
-            log_info "  $feature requires capabilities: ${unique_requires[*]}"
+        if [[ ${#req_arr[@]} -gt 0 ]]; then
+            log_info "  $feature requires capabilities: ${req_arr[*]}"
         fi
-        if [[ ${#unique_deps[@]} -eq 0 && ${#provides[@]} -eq 0 && ${#unique_requires[@]} -eq 0 ]]; then
+        if [[ ${#dep_arr[@]} -eq 0 && ${#prov_arr[@]} -eq 0 && ${#req_arr[@]} -eq 0 ]]; then
             log_info "  $feature has no dependencies"
         fi
     done
