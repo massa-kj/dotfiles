@@ -57,6 +57,12 @@ if [[ "$(type -t planner_run)" != "function" ]]; then
     source "${DOTFILES_ROOT}/core/lib/planner.sh"
 fi
 
+# Lazily source policy_resolver if not already loaded
+if [[ "$(type -t policy_resolver_run)" != "function" ]]; then
+    # shellcheck source=core/lib/policy_resolver.sh
+    source "${DOTFILES_ROOT}/core/lib/policy_resolver.sh"
+fi
+
 # Lazily source executor if not already loaded
 if [[ "$(type -t executor_run)" != "function" ]]; then
     # shellcheck source=core/lib/executor.sh
@@ -348,13 +354,17 @@ orchestrator_apply() {
     local -a _apply_sorted
     resolve_dependencies _apply_valid_features _apply_sorted || return 1
 
-    # Compile DesiredResourceGraph (profile version hints embedded for runtime resources)
+    # Compile raw DesiredResourceGraph (assigns stable resource IDs only)
     local _apply_drg
-    _apply_drg=$(feature_compiler_run "$_apply_index" _apply_sorted "$profile_file") || return 1
+    _apply_drg=$(feature_compiler_run "$_apply_index" _apply_sorted) || return 1
+
+    # Resolve desired_backend per resource via PolicyResolver
+    local _apply_rrg
+    _apply_rrg=$(policy_resolver_run "$_apply_drg") || return 1
 
     # Plan: pure computation of what needs to happen
     local plan_json
-    plan_json=$(planner_run "$_apply_drg" _apply_sorted) || return 1
+    plan_json=$(planner_run "$_apply_rrg" _apply_sorted "$profile_file") || return 1
 
     # Inject spec_version-blocked features into plan output
     plan_json=$(_plan_inject_blocked "$plan_json" "$_apply_sv_blocked")

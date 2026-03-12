@@ -2,17 +2,19 @@
 # Module: compiler (FeatureCompiler, PowerShell)
 #
 # Responsibility:
-#   Compile the DesiredResourceGraph from Feature Index + resolved feature order
-#   and policy (desired_backend resolution).
+#   Compile the raw DesiredResourceGraph from Feature Index + resolved feature
+#   order. Assigns stable resource IDs; does NOT resolve backends or read
+#   profile/policy. That is PolicyResolver's job.
 #
 # Public API (Stable):
 #   Invoke-FeatureCompilerRun <FeatureIndexJson> <SortedFeatures>
-#   Returns DesiredResourceGraph JSON string, or $null on error.
+#   Returns raw DesiredResourceGraph JSON string, or $null on error.
 #
 # Contract:
 #   - mode:script     → entry with empty resources array
-#   - mode:declarative → resources expanded with desired_backend from policy
+#   - mode:declarative → resources expanded with stable IDs (no desired_backend)
 #   - Declarative validation: error if no resources, error if install.ps1 present
+#   - PolicyResolver is responsible for adding desired_backend to each resource
 #
 # JSON schema: see docs/specs/data/desired_resource_graph.md
 # -----------------------------------------------------------------------------
@@ -20,13 +22,8 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-# This library expects env.ps1, logger.ps1, source_registry.ps1, and
-# backend_registry.ps1 to be loaded by the caller.
-
-# Lazily source backend_registry if not already loaded
-if (-not (Get-Command Resolve-BackendFor -ErrorAction SilentlyContinue)) {
-    . "$env:DOTFILES_ROOT\core\lib\backend_registry.ps1"
-}
+# This library expects env.ps1, logger.ps1, and source_registry.ps1 to be
+# loaded by the caller. backend_registry is NOT needed by this module.
 
 # _Compiler-ResourceId <Kind> <ResourceObj>
 # Derive a stable resource id from a resource object.
@@ -61,44 +58,9 @@ function _Compiler-ResourceId {
     }
 }
 
-# _Compiler-ProfileVersion <ProfileFile> <CanonicalId>
-# Extract version hint for a feature from its profile YAML entry.
-# Tries the canonical ID key first, then falls back to the bare name.
-# Returns $null if not found or no version is set.
-function _Compiler-ProfileVersion {
-    param(
-        [Parameter(Mandatory=$true)] [string]$ProfileFile,
-        [Parameter(Mandatory=$true)] [string]$CanonicalId
-    )
-
-    try {
-        # Try canonical ID (e.g. "tools/node")
-        $val = Get-Content $ProfileFile -Raw |
-               & yq eval ".features[\"${CanonicalId}\"].version // \"\"" - 2>$null
-        if ($LASTEXITCODE -eq 0 -and
-            -not [string]::IsNullOrWhiteSpace($val) -and
-            $val -ne "null" -and $val -ne "") {
-            return $val
-        }
-
-        # Fallback: bare name (e.g. "node")
-        $bareName = if ($CanonicalId -match '/') { $CanonicalId -replace '^[^/]+/', '' } else { $CanonicalId }
-        if ($bareName -ne $CanonicalId) {
-            $val = Get-Content $ProfileFile -Raw |
-                   & yq eval ".features[\"${bareName}\"].version // \"\"" - 2>$null
-            if ($LASTEXITCODE -eq 0 -and
-                -not [string]::IsNullOrWhiteSpace($val) -and
-                $val -ne "null" -and $val -ne "") {
-                return $val
-            }
-        }
-    } catch { }
-
-    return $null
-}
-
 # _Compiler-ResolveResource <CanonicalId> <ResourceObj>
-# Add desired_backend and id to a resource object (as new PSCustomObject).
+# Add a stable id to a resource object (as new PSCustomObject). Does not resolve backends.
+# PolicyResolver will add desired_backend in a subsequent step.
 function _Compiler-ResolveResource {
     param(
         [Parameter(Mandatory=$true)] [string]$CanonicalId,
@@ -112,7 +74,7 @@ function _Compiler-ResolveResource {
 
     $resourceId = _Compiler-ResourceId -Kind $kind -ResourceObj $ResourceObj
 
-    # Build a copy of the resource as an ordered hashtable
+    # Build a copy of the resource with id added. All other fields pass through unchanged.
     $updated = [ordered]@{}
     foreach ($prop in $ResourceObj.PSObject.Properties) {
         $updated[$prop.Name] = $prop.Value
@@ -120,28 +82,8 @@ function _Compiler-ResolveResource {
     $updated['id'] = $resourceId
 
     switch ($kind) {
-        "package" {
-            $name = $ResourceObj.PSObject.Properties['name']?.Value
-            $backend = Resolve-BackendFor -Kind "package" -Name $name 2>$null
-            if (-not $backend) { $backend = "unknown" }
-            $updated['desired_backend'] = $backend
-        }
-        "runtime" {
-            $name = $ResourceObj.PSObject.Properties['name']?.Value
-            $backend = Resolve-BackendFor -Kind "runtime" -Name $name 2>$null
-            if (-not $backend) { $backend = "unknown" }
-            $updated['desired_backend'] = $backend
-
-            # Embed version hint from profile if available
-            $profileFile   = $script:CompilerProfileFile   ?? ""
-            $canonicalIdCtx = $script:CompilerCanonicalId  ?? ""
-            if ($profileFile -ne "" -and $canonicalIdCtx -ne "" -and (Test-Path $profileFile)) {
-                $versionHint = _Compiler-ProfileVersion -ProfileFile $profileFile -CanonicalId $canonicalIdCtx
-                if ($versionHint) { $updated['version'] = $versionHint }
-            }
-        }
-        "fs" {
-            # fs resources have no backend
+        { $_ -in @("package", "runtime", "fs") } {
+            # Pass through; PolicyResolver will add desired_backend for package/runtime
         }
         default {
             throw "unknown resource kind '$kind' in $CanonicalId"
@@ -151,34 +93,23 @@ function _Compiler-ResolveResource {
     return $updated
 }
 
-# Script-scoped context set by Invoke-FeatureCompilerRun so that
-# _Compiler-ResolveResource can embed profile version hints without signature changes.
-$script:CompilerProfileFile = ""
-$script:CompilerCanonicalId = ""
-
-# Invoke-FeatureCompilerRun <FeatureIndexJson> <SortedFeatures> [<ProfileFile>]
-# Compile DesiredResourceGraph from Feature Index and resolved feature order.
+# Invoke-FeatureCompilerRun <FeatureIndexJson> <SortedFeatures>
+# Compile raw DesiredResourceGraph from Feature Index and resolved feature order.
 # Returns DesiredResourceGraph JSON string, or $null on error.
 #
 # For mode:script features: entry with empty resources array.
-# For mode:declarative features: resources expanded with desired_backend.
-# Optional ProfileFile: when supplied, runtime resources embed version hints.
+# For mode:declarative features: resources expanded with stable IDs.
+# Call Invoke-PolicyResolverRun on the output to add desired_backend per resource.
 function Invoke-FeatureCompilerRun {
     param(
         [Parameter(Mandatory=$true)]  [string]   $FeatureIndexJson,
-        [Parameter(Mandatory=$true)]  [string[]] $SortedFeatures,
-        [Parameter(Mandatory=$false)] [string]   $ProfileFile = ""
+        [Parameter(Mandatory=$true)]  [string[]] $SortedFeatures
     )
-
-    $script:CompilerProfileFile = $ProfileFile
 
     $index    = $FeatureIndexJson | ConvertFrom-Json
     $features = [ordered]@{}
 
     foreach ($canonicalId in $SortedFeatures) {
-        # Expose the current canonical ID for _Compiler-ResolveResource
-        $script:CompilerCanonicalId = $canonicalId
-
         $prop = $index.features.PSObject.Properties[$canonicalId]
         if ($null -eq $prop) {
             Log-Error "Invoke-FeatureCompilerRun: feature not found in index: $canonicalId"
@@ -211,7 +142,7 @@ function Invoke-FeatureCompilerRun {
                 return $null
             }
 
-            # ── Expand resources with desired_backend ──────────────────────
+            # ── Expand resources with stable IDs ──────────────────────────────────
             foreach ($res in $specResources) {
                 try {
                     $resolved  = _Compiler-ResolveResource -CanonicalId $canonicalId -ResourceObj $res

@@ -205,15 +205,22 @@ if (-not (Read-FeatureMetadata -FeatureIndexJson $_planIndex -Features $_svResul
 $sortedFeatures = Resolve-Dependencies -DesiredFeatures $_svResult.Valid
 if ($null -eq $sortedFeatures) { exit 1 }
 
-# Compile DesiredResourceGraph (profile version hints embedded for runtime resources)
-$_planDrg = Invoke-FeatureCompilerRun -FeatureIndexJson $_planIndex -SortedFeatures $sortedFeatures -ProfileFile $ProfileFile
+# Compile raw DesiredResourceGraph (assigns stable resource IDs only)
+$_planDrg = Invoke-FeatureCompilerRun -FeatureIndexJson $_planIndex -SortedFeatures $sortedFeatures
 if ($null -eq $_planDrg) {
     Log-Error "Compiler failed to produce a DesiredResourceGraph"
     exit 1
 }
 
+# Resolve desired_backend per resource via PolicyResolver
+$_planRrg = Invoke-PolicyResolverRun -DrgJson $_planDrg
+if ($null -eq $_planRrg) {
+    Log-Error "PolicyResolver failed to produce a ResolvedResourceGraph"
+    exit 1
+}
+
 # Plan: pure computation — no state writes
-$planJson = Invoke-PlannerRun -DrgJson $_planDrg -SortedFeatures $sortedFeatures
+$planJson = Invoke-PlannerRun -DrgJson $_planRrg -SortedFeatures $sortedFeatures -ProfileFile $ProfileFile
 if (-not $planJson) {
     Log-Error "Planner failed to produce a plan"
     exit 1

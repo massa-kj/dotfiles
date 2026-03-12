@@ -7,20 +7,21 @@
 #   Never executes anything.
 #
 # Public API:
-#   Invoke-PlannerRun <DrgJson> <SortedFeatures>  → plan JSON string
+#   Invoke-PlannerRun <DrgJson> <SortedFeatures> <ProfileFile>  → plan JSON string
 #
 # Internal phases (each PURE function):
-#   _Planner-Diff       drg × state → diff array
+#   _Planner-Diff       rrg × state → diff array (includes profile_version per feature)
 #   _Planner-Classify   diff array  → classified array
 #   _Planner-Decide     classified  → plan PSCustomObject
 #
 # Inputs:
-#   DrgJson        — DesiredResourceGraph JSON (produced by FeatureCompiler)
+#   DrgJson        — ResolvedResourceGraph JSON (DRG + desired_backend, from PolicyResolver)
 #   SortedFeatures — topologically sorted canonical feature IDs
+#   ProfileFile    — path to profile YAML; used to read version hints per feature
 #   State-*        — public state API (read-only)
 #
-# Planner must NOT receive profile or policy directly.
-# Backend resolution (desired_backend per resource) is already in DrgJson.
+# Planner receives policy-resolved resources (desired_backend in RRG) and reads
+# profile version hints directly; it does NOT receive raw policy objects.
 #
 # Plan JSON schema:
 #   {
@@ -52,6 +53,49 @@ $ErrorActionPreference = "Stop"
 
 # Valid resource kinds.  Anything else causes a "blocked" classification.
 $script:PlannerValidKinds = @("package", "runtime", "fs")
+
+# Profile file path set by Invoke-PlannerRun and read by _Planner-Diff.
+$script:PlannerProfileFile = ""
+
+# ── Profile helpers ───────────────────────────────────────────────────────────────
+
+# _Planner-ProfileVersion <ProfileFile> <CanonicalId>
+# Extract version hint for a feature from its profile YAML entry.
+# Tries the canonical ID key first, then falls back to the bare name.
+# Returns empty string if not found or no version is set.
+function _Planner-ProfileVersion {
+    param(
+        [Parameter(Mandatory=$true)] [string]$ProfileFile,
+        [Parameter(Mandatory=$true)] [string]$CanonicalId
+    )
+
+    if (-not (Test-Path $ProfileFile)) { return "" }
+
+    try {
+        # Try canonical ID (e.g. "tools/node")
+        $val = Get-Content $ProfileFile -Raw |
+               & yq eval ".features[\"${CanonicalId}\"].version // \"\"" - 2>$null
+        if ($LASTEXITCODE -eq 0 -and
+            -not [string]::IsNullOrWhiteSpace($val) -and
+            $val -ne "null" -and $val -ne "") {
+            return $val
+        }
+
+        # Fallback: bare name (e.g. "node")
+        $bareName = if ($CanonicalId -match '/') { $CanonicalId -replace '^[^/]+/', '' } else { $CanonicalId }
+        if ($bareName -ne $CanonicalId) {
+            $val = Get-Content $ProfileFile -Raw |
+                   & yq eval ".features[\"${bareName}\"].version // \"\"" - 2>$null
+            if ($LASTEXITCODE -eq 0 -and
+                -not [string]::IsNullOrWhiteSpace($val) -and
+                $val -ne "null" -and $val -ne "") {
+                return $val
+            }
+        }
+    } catch { }
+
+    return ""
+}
 
 # ── Semantic key helpers ──────────────────────────────────────────────────────
 
@@ -106,13 +150,14 @@ function _Planner-StateSemanticKey {
     }
 }
 
-# _Planner-CheckResourceCompat <DesiredRes> <StateRes>
+# _Planner-CheckResourceCompat <DesiredRes> <StateRes> <ProfileVersion>
 # Compare one desired resource against its matched state resource.
 # Returns one of: "compatible", "backend_mismatch", "version_mismatch", "incompatible".
 function _Planner-CheckResourceCompat {
     param(
-        [Parameter(Mandatory=$true)] [object]$DesiredRes,
-        [Parameter(Mandatory=$true)] [object]$StateRes
+        [Parameter(Mandatory=$true)]  [object]$DesiredRes,
+        [Parameter(Mandatory=$true)]  [object]$StateRes,
+        [Parameter(Mandatory=$false)] [string]$ProfileVersion = ""
     )
 
     $kind = $DesiredRes.PSObject.Properties['kind']?.Value
@@ -128,11 +173,11 @@ function _Planner-CheckResourceCompat {
             $sBackend = $StateRes.PSObject.Properties['backend']?.Value            ?? "?"
             if ($dBackend -ne $sBackend) { return "backend_mismatch" }
 
-            $dVer = $DesiredRes.PSObject.Properties['version']?.Value
-            if ($dVer -and $dVer -ne "") {
+            # Use profile-supplied version for comparison (not a field on the RRG resource)
+            if ($ProfileVersion -ne "") {
                 $rt   = $StateRes.PSObject.Properties['runtime']?.Value
                 $sVer = if ($rt) { $rt.PSObject.Properties['version']?.Value } else { $null }
-                if ($dVer -ne ($sVer ?? "")) { return "version_mismatch" }
+                if ($ProfileVersion -ne ($sVer ?? "")) { return "version_mismatch" }
             }
             return "compatible"
         }
@@ -182,7 +227,7 @@ function _Planner-StateUnknownKindsList {
 # ── Phase 1: Diff ─────────────────────────────────────────────────────────────
 
 # _Planner-Diff <DrgJson> <SortedFeatures>
-# Compare desired features (DRG) against current state.
+# Compare desired features (ResolvedResourceGraph) against current state.
 # Returns an array of diff objects.
 function _Planner-Diff {
     param(
@@ -197,7 +242,7 @@ function _Planner-Diff {
     foreach ($feature in $SortedFeatures) {
         $inState = State-HasFeature -Feature $feature
 
-        # Extract desired resources from DRG
+        # Extract desired resources from RRG
         $drgFeature       = $drg.features.PSObject.Properties[$feature]?.Value
         $desiredResources = @()
         if ($drgFeature -and $drgFeature.PSObject.Properties['resources']?.Value) {
@@ -235,6 +280,13 @@ function _Planner-Diff {
             }
         }
 
+        # Read version hint for this feature from profile (used for runtime version comparison)
+        $profileVersion = ""
+        if (-not [string]::IsNullOrWhiteSpace($script:PlannerProfileFile)) {
+            $pv = _Planner-ProfileVersion -ProfileFile $script:PlannerProfileFile -CanonicalId $feature
+            if ($pv) { $profileVersion = $pv }
+        }
+
         $diff += [PSCustomObject]@{
             feature                = $feature
             in_desired             = $true
@@ -244,6 +296,7 @@ function _Planner-Diff {
             state_resources        = $stateResources
             has_blocked_resources  = $hasBlocked
             blocked_reason         = $blockedReason
+            profile_version        = $profileVersion
         }
     }
 
@@ -331,7 +384,7 @@ function _Planner-Classify {
                 $hasBm  = $false   # has backend mismatch only
 
                 foreach ($k in $common) {
-                    $compat = _Planner-CheckResourceCompat -DesiredRes $dKeyed[$k] -StateRes $sKeyed[$k]
+                    $compat = _Planner-CheckResourceCompat -DesiredRes $dKeyed[$k] -StateRes $sKeyed[$k] -ProfileVersion ($entry.PSObject.Properties['profile_version']?.Value ?? "")
                     if     ($compat -eq "backend_mismatch") { $hasBm  = $true }
                     elseif ($compat -ne "compatible")       { $hasInc = $true }
                 }
@@ -438,21 +491,24 @@ function _Planner-Decide {
 
 # ── Public API ────────────────────────────────────────────────────────────────
 
-# Invoke-PlannerRun <DrgJson> <SortedFeatures>
+# Invoke-PlannerRun <DrgJson> <SortedFeatures> <ProfileFile>
 # Full planning pipeline: diff → classify → decide.
 # Returns the plan as a JSON string, or throws on error.
 #
 # Reads state via State-HasFeature / State-ListFeatures / State-QueryResources (read-only).
 function Invoke-PlannerRun {
     param(
-        [Parameter(Mandatory=$true)] [string]   $DrgJson,
-        [Parameter(Mandatory=$true)] [string[]] $SortedFeatures
+        [Parameter(Mandatory=$true)]  [string]   $DrgJson,
+        [Parameter(Mandatory=$true)]  [string[]] $SortedFeatures,
+        [Parameter(Mandatory=$false)] [string]   $ProfileFile = ""
     )
 
     if ([string]::IsNullOrWhiteSpace($DrgJson)) {
         Log-Error "Invoke-PlannerRun: DrgJson is required"
         throw "Invoke-PlannerRun: DrgJson is required"
     }
+
+    $script:PlannerProfileFile = $ProfileFile
 
     $diff       = _Planner-Diff     -DrgJson $DrgJson -SortedFeatures $SortedFeatures
     $classified = _Planner-Classify -Diff $diff

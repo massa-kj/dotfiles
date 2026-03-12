@@ -250,12 +250,16 @@ read_feature_metadata "$_plan_index" _plan_valid_features || exit 1
 declare -a _plan_sorted
 resolve_dependencies _plan_valid_features _plan_sorted || exit 1
 
-# Compile DesiredResourceGraph (profile version hints embedded for runtime resources)
+# Compile raw DesiredResourceGraph (assigns stable resource IDs only)
 _plan_drg=""
-_plan_drg=$(feature_compiler_run "$_plan_index" _plan_sorted "$PROFILE_FILE") || exit 1
+_plan_drg=$(feature_compiler_run "$_plan_index" _plan_sorted) || exit 1
+
+# Resolve desired_backend per resource via PolicyResolver
+_plan_rrg=""
+_plan_rrg=$(policy_resolver_run "$_plan_drg") || exit 1
 
 # Plan: pure computation — no state writes
-plan_json=$(planner_run "$_plan_drg" _plan_sorted) || exit 1
+plan_json=$(planner_run "$_plan_rrg" _plan_sorted "$PROFILE_FILE") || exit 1
 
 # Inject spec_version-blocked features into plan output
 plan_json=$(_plan_inject_blocked "$plan_json" "$_plan_sv_blocked")

@@ -2,8 +2,10 @@
 # -----------------------------------------------------------------------------
 # Unit tests: compiler (FeatureCompiler)
 #
-# Tests that feature_compiler_run produces correct DesiredResourceGraph JSON
+# Tests that feature_compiler_run produces correct raw DesiredResourceGraph JSON
 # for both script and declarative features, and enforces declarative invariants.
+# The compiler only assigns stable resource IDs; desired_backend is NOT present
+# in the output (PolicyResolver adds that in a subsequent step).
 #
 # Run directly: bash tests/unit/test_compiler.sh
 # Exit code 0 = all pass, 1 = one or more failures.
@@ -33,17 +35,6 @@ sources: []
 EOF
 
 source "$REPO_ROOT/core/lib/source_registry.sh"
-
-# Stub resolve_backend_for to avoid needing a real backend registry
-resolve_backend_for() {
-    local kind="$1"
-    local name="$2"
-    echo "stub_backend"
-    return 0
-}
-
-# Stub backend_registry functions referenced by compiler
-backend_registry_load_policy() { return 0; }
 
 source "$REPO_ROOT/core/lib/compiler.sh"
 
@@ -117,9 +108,9 @@ res_count=$(printf '%s' "$_drg_script" \
     | jq '.features["core/scriptfeat"].resources | length')
 _assert_eq "script feature has 0 resources" "0" "$res_count"
 
-# ── Test: mode:declarative → resources expanded with id + desired_backend ────
+# ── Test: mode:declarative → resources expanded with stable id (no desired_backend) ──
 
-echo "feature_compiler_run: mode:declarative expands resources"
+echo "feature_compiler_run: mode:declarative expands resources with stable id"
 
 _decl_resources='[{"kind": "package", "name": "ripgrep"}]'
 _decl_entry=$(_make_declarative_entry "core/declfeat" "$DECL_DIR" "$_decl_resources")
@@ -137,9 +128,10 @@ res_id=$(printf '%s' "$_drg_decl" \
     | jq -r '.features["core/declfeat"].resources[0].id // "null"')
 _assert_eq "resource id is package:ripgrep" "package:ripgrep" "$res_id"
 
+# Compiler must NOT embed desired_backend (that is PolicyResolver's job)
 res_backend=$(printf '%s' "$_drg_decl" \
-    | jq -r '.features["core/declfeat"].resources[0].desired_backend // "null"')
-_assert_eq "resource desired_backend is stub_backend" "stub_backend" "$res_backend"
+    | jq -r '.features["core/declfeat"].resources[0].desired_backend // "absent"')
+_assert_eq "compiler does not embed desired_backend" "absent" "$res_backend"
 
 # ── Test: mode:declarative with no resources → error ─────────────────────────
 

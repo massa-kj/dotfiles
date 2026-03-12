@@ -48,6 +48,11 @@ if (-not (Get-Command Invoke-PlannerRun -ErrorAction SilentlyContinue)) {
     . "$env:DOTFILES_ROOT\core\lib\planner.ps1"
 }
 
+# Lazily source policy_resolver if not already loaded
+if (-not (Get-Command Invoke-PolicyResolverRun -ErrorAction SilentlyContinue)) {
+    . "$env:DOTFILES_ROOT\core\lib\policy_resolver.ps1"
+}
+
 # Lazily source executor if not already loaded
 if (-not (Get-Command Invoke-ExecutorRun -ErrorAction SilentlyContinue)) {
     . "$env:DOTFILES_ROOT\core\lib\executor.ps1"
@@ -378,12 +383,16 @@ function Invoke-OrchestratorApply {
     $sortedFeatures = Resolve-Dependencies -DesiredFeatures $svResult.Valid
     if ($null -eq $sortedFeatures) { exit 1 }
 
-    # Compile DesiredResourceGraph (profile version hints embedded for runtime resources)
-    $drg = Invoke-FeatureCompilerRun -FeatureIndexJson $featureIndex -SortedFeatures $sortedFeatures -ProfileFile $ProfileFile
+    # Compile raw DesiredResourceGraph (assigns stable resource IDs only)
+    $drg = Invoke-FeatureCompilerRun -FeatureIndexJson $featureIndex -SortedFeatures $sortedFeatures
     if ($null -eq $drg) { exit 1 }
 
+    # Resolve desired_backend per resource via PolicyResolver
+    $rrg = Invoke-PolicyResolverRun -DrgJson $drg
+    if ($null -eq $rrg) { exit 1 }
+
     # Plan: pure computation of what needs to happen
-    $planJson = Invoke-PlannerRun -DrgJson $drg -SortedFeatures $sortedFeatures
+    $planJson = Invoke-PlannerRun -DrgJson $rrg -SortedFeatures $sortedFeatures -ProfileFile $ProfileFile
     $planJson = Invoke-PlanInjectBlocked -PlanJson $planJson -BlockedExtraJson $svResult.BlockedJson
 
     # Execute: impure — calls scripts, commits state

@@ -8,20 +8,21 @@
 #   Never executes anything.
 #
 # Public API:
-#   planner_run <drg_json> <sorted_features_nameref>  → plan JSON (stdout)
+#   planner_run <rrg_json> <sorted_features_nameref> <profile_file>  → plan JSON (stdout)
 #
 # Internal phases (each PURE function):
-#   _planner_diff       drg × state → diff JSON array
+#   _planner_diff       rrg × state → diff JSON array (includes profile_version per feature)
 #   _planner_classify   diff JSON   → classified JSON array
 #   _planner_decide     classified JSON × sorted order → plan JSON
 #
 # Inputs:
-#   drg_json              — DesiredResourceGraph JSON (produced by FeatureCompiler)
+#   rrg_json              — ResolvedResourceGraph JSON (DRG + desired_backend, from PolicyResolver)
 #   sorted_features       — topologically sorted canonical feature IDs from Resolver
+#   profile_file          — path to profile YAML; used to read version hints per feature
 #   _STATE_JSON (global)  — current authoritative state (read-only)
 #
-# Planner must NOT receive profile or policy directly.
-# Backend resolution (desired_backend per resource) is already in drg_json.
+# Planner receives policy-resolved resources (desired_backend in RRG) and reads
+# profile version hints directly; it does NOT receive raw policy objects.
 #
 # Plan JSON schema:
 #   {
@@ -49,13 +50,41 @@
 # -----------------------------------------------------------------------------
 
 # This module reads _STATE_JSON as a READ-ONLY input.
-# It MUST NOT write to any module-global variable.
+# _PLANNER_PROFILE_FILE is set by planner_run and read by _planner_diff.
+_PLANNER_PROFILE_FILE=""
 
 # Valid resource kinds; anything else causes a "blocked" classification.
 # Guard re-declaration when this file is re-sourced.
 [[ "${_PLANNER_VALID_KINDS_SET:-}" == "1" ]] || {
     readonly _PLANNER_VALID_KINDS="package runtime fs"
     readonly _PLANNER_VALID_KINDS_SET="1"
+}
+
+# ── Profile helpers ──────────────────────────────────────────────────────────
+
+# _planner_profile_version <profile_file> <canonical_id>
+# Extract the version hint for a feature from a profile file.
+# Tries canonical ID first (e.g. "core/node"), then bare name (e.g. "node").
+# Prints the version string, or empty string if not found.
+_planner_profile_version() {
+    local profile_file="$1"
+    local canonical_id="$2"
+
+    [[ -z "$profile_file" || ! -f "$profile_file" ]] && echo "" && return 0
+
+    # Try canonical ID bracket notation (handles "/" in key)
+    local ver
+    ver=$(yq eval ".features[\"${canonical_id}\"].version // \"\"" "$profile_file" 2>/dev/null)
+    if [[ -n "$ver" && "$ver" != "null" ]]; then echo "$ver"; return 0; fi
+
+    # Bare name fallback for profiles without source_id prefix
+    local bare="${canonical_id#*/}"
+    if [[ "$bare" != "$canonical_id" ]]; then
+        ver=$(yq eval ".features[\"${bare}\"].version // \"\"" "$profile_file" 2>/dev/null)
+        if [[ -n "$ver" && "$ver" != "null" ]]; then echo "$ver"; return 0; fi
+    fi
+
+    echo ""
 }
 
 # ── State helpers (read-only) ─────────────────────────────────────────────────
@@ -80,8 +109,8 @@ _planner_state_unknown_kinds_csv() {
 
 # ── Phase 1: Diff ─────────────────────────────────────────────────────────────
 
-# _planner_diff <drg_json> <sorted_features_nameref>
-# Compare desired features (DesiredResourceGraph) against current state.
+# _planner_diff <rrg_json> <sorted_features_nameref>
+# Compare desired features (ResolvedResourceGraph) against current state.
 # Outputs a JSON array of diff objects to stdout.
 #
 # Diff object schema:
@@ -90,10 +119,11 @@ _planner_state_unknown_kinds_csv() {
 #     "in_desired":             bool,
 #     "in_state":               bool,
 #     "desired_resource_count": number,
-#     "desired_resources":      array,   // resources from DRG
+#     "desired_resources":      array,   // resources from RRG (with desired_backend)
 #     "state_resources":        array,   // resources from state ([] if not installed)
 #     "has_blocked_resources":  bool,
-#     "blocked_reason":         string | null
+#     "blocked_reason":         string | null,
+#     "profile_version":        string    // version hint from profile (empty if not set)
 #   }
 _planner_diff() {
     local drg_json="$1"
@@ -106,7 +136,7 @@ _planner_diff() {
         local in_state="false"
         state_has_feature "$feature" && in_state="true"
 
-        # Extract desired resources from DRG
+        # Extract desired resources from RRG
         local desired_resources desired_count
         desired_resources=$(printf '%s' "$drg_json" \
             | jq -c --arg f "$feature" '.features[$f].resources // []')
@@ -143,6 +173,12 @@ _planner_diff() {
             fi
         fi
 
+        # Read version hint for this feature from profile (used for runtime version comparison)
+        local profile_version=""
+        if [[ -n "${_PLANNER_PROFILE_FILE:-}" ]]; then
+            profile_version=$(_planner_profile_version "$_PLANNER_PROFILE_FILE" "$feature")
+        fi
+
         diff_json=$(printf '%s' "$diff_json" | jq \
             --arg  f          "$feature" \
             --argjson in_state  "$in_state" \
@@ -151,6 +187,7 @@ _planner_diff() {
             --argjson hb        "$has_blocked" \
             --argjson br        "$blocked_reason" \
             --argjson dc        "$desired_count" \
+            --arg pv            "$profile_version" \
             '. + [{
                 feature:                $f,
                 in_desired:             true,
@@ -159,7 +196,8 @@ _planner_diff() {
                 desired_resources:      $desired,
                 state_resources:        $state,
                 has_blocked_resources:  $hb,
-                blocked_reason:         $br
+                blocked_reason:         $br,
+                profile_version:        $pv
             }]')
     done
 
@@ -219,6 +257,7 @@ _planner_classify() {
 
         elif (.in_desired and .in_state) then
             (.desired_resource_count) as $dc |
+            (.profile_version // "") as $pv |
             if $dc == 0 then
                 # Script feature (empty desired resources): classify by feature presence only
                 {feature: .feature, classification: "noop"}
@@ -268,7 +307,7 @@ _planner_classify() {
                         end
                     elif $dr.kind == "runtime" then
                         if ($dr.desired_backend // "?") != ($sr.backend // "?") then "backend_mismatch"
-                        elif (($dr.version // "") | length) > 0 and ($dr.version != ($sr.runtime.version // "")) then "version_mismatch"
+                        elif ($pv | length) > 0 and ($pv != ($sr.runtime.version // "")) then "version_mismatch"
                         else "compatible"
                         end
                     elif $dr.kind == "fs" then
@@ -362,7 +401,7 @@ _planner_decide() {
 
 # ── Public API ────────────────────────────────────────────────────────────────
 
-# planner_run <drg_json> <sorted_features_nameref>
+# planner_run <rrg_json> <sorted_features_nameref> <profile_file>
 # Full planning pipeline: diff → classify → decide.
 # Outputs plan JSON to stdout.
 #
@@ -371,6 +410,7 @@ _planner_decide() {
 planner_run() {
     local drg_json="$1"
     local sorted_features_ref="$2"
+    _PLANNER_PROFILE_FILE="${3:-}"
 
     if [[ -z "$drg_json" ]]; then
         log_error "planner_run: drg_json is required"

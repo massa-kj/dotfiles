@@ -8,6 +8,9 @@
 #   strengthen, blocked (desired unknown kind), blocked (state unknown kind),
 #   runtime version mismatch → replace, runtime version match → noop
 #
+# DRG fixtures use the RRG format (desired_backend present in resources).
+# Version comparison uses a profile YAML file passed to planner_run.
+#
 # Run directly: bash tests/unit/test_planner.sh
 # Exit code 0 = all pass, 1 = one or more failures.
 # -----------------------------------------------------------------------------
@@ -18,7 +21,12 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
 source "$(dirname "${BASH_SOURCE[0]}")/helpers.sh"
 
-# ── Stubs ─────────────────────────────────────────────────────────────────────
+# ── Setup: tmp directory for profile YAML files ───────────────────────────────
+
+TMPDIR_PLANNER="$(mktemp -d)"
+trap 'rm -rf "$TMPDIR_PLANNER"' EXIT
+
+# ── Stubs ─────────────────────────────────────────────────────────────────────────────────────
 
 # Stub log_* already provided via helpers.sh.
 # We set _STATE_JSON directly so state_load is never called.
@@ -261,38 +269,52 @@ _assert_summary_field  "blocked(state unknown): summary.blocked=1" "blocked" "1"
 unset _sorted
 
 # ---------------------------------------------------------------------------
-# 11. runtime: version mismatch → replace
+# 11. runtime: version mismatch → replace  (version read from profile file)
 # ---------------------------------------------------------------------------
 echo
 echo "── runtime version mismatch → replace ─────────────────────────"
 
+_PROFILE_V11="$TMPDIR_PLANNER/profile_v11.yaml"
+cat > "$_PROFILE_V11" <<'EOF'
+features:
+  tools/node:
+    version: "20.0.0"
+EOF
+
 _STATE_JSON=$(_make_state '{"tools/node":{"resources":[{"kind":"runtime","id":"rt:node","backend":"mise","runtime":{"name":"node","version":"18.0.0"}}]}}')
-drg=$(_make_drg '{"tools/node":{"resources":[{"kind":"runtime","name":"node","id":"rt:node","desired_backend":"mise","version":"20.0.0"}]}}')
+drg=$(_make_drg '{"tools/node":{"resources":[{"kind":"runtime","name":"node","id":"rt:node","desired_backend":"mise"}]}}')
 declare -a _sorted=("tools/node")
-plan=$(planner_run "$drg" _sorted)
+plan=$(planner_run "$drg" _sorted "$_PROFILE_V11")
 
 _assert_op     "runtime version mismatch: action=replace" "tools/node" "replace" "$plan"
 unset _sorted
 
 # ---------------------------------------------------------------------------
-# 12. runtime: version match → noop
+# 12. runtime: version match → noop  (version read from profile file)
 # ---------------------------------------------------------------------------
 echo
 echo "── runtime version match → noop ───────────────────────────────"
 
+_PROFILE_V12="$TMPDIR_PLANNER/profile_v12.yaml"
+cat > "$_PROFILE_V12" <<'EOF'
+features:
+  tools/node:
+    version: "20.0.0"
+EOF
+
 _STATE_JSON=$(_make_state '{"tools/node":{"resources":[{"kind":"runtime","id":"rt:node","backend":"mise","runtime":{"name":"node","version":"20.0.0"}}]}}')
-drg=$(_make_drg '{"tools/node":{"resources":[{"kind":"runtime","name":"node","id":"rt:node","desired_backend":"mise","version":"20.0.0"}]}}')
+drg=$(_make_drg '{"tools/node":{"resources":[{"kind":"runtime","name":"node","id":"rt:node","desired_backend":"mise"}]}}')
 declare -a _sorted=("tools/node")
-plan=$(planner_run "$drg" _sorted)
+plan=$(planner_run "$drg" _sorted "$_PROFILE_V12")
 
 _assert_noop   "runtime version match: noop"              "tools/node" "$plan"
 unset _sorted
 
 # ---------------------------------------------------------------------------
-# 13. runtime: no version in desired → noop (no version constraint)
+# 13. runtime: no version in profile → noop (no version constraint)
 # ---------------------------------------------------------------------------
 echo
-echo "── runtime no version in desired → noop ───────────────────────"
+echo "── runtime no version in profile → noop ───────────────────────"
 
 _STATE_JSON=$(_make_state '{"tools/python":{"resources":[{"kind":"runtime","id":"rt:python","backend":"mise","runtime":{"name":"python","version":"3.11.0"}}]}}')
 drg=$(_make_drg '{"tools/python":{"resources":[{"kind":"runtime","name":"python","id":"rt:python","desired_backend":"mise"}]}}')
