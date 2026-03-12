@@ -265,6 +265,13 @@ function Source-Registry-GetBackendDir {
     return $script:SourceRegistryBackendDirs[$SourceId]
 }
 
+# Source-Registry-GetRegisteredSources
+# Return a sorted array of all registered source IDs.
+function Source-Registry-GetRegisteredSources {
+    _Source-Registry-EnsureLoaded
+    return @($script:SourceRegistrySourceTypes.Keys | Sort-Object)
+}
+
 function _Source-Registry-IsAllowedKind {
     param(
         [string]$SourceId,

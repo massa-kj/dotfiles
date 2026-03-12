@@ -7,8 +7,13 @@
 #
 # Public API (Stable):
 #   Resolve-Dependencies <DesiredFeatures>
-#   Read-FeatureMetadata <Features>
+#   Read-FeatureMetadata <FeatureIndexJson> <Features>
 #   Invoke-TopoSortDFS <Feature> <DesiredFeatures>
+#
+# Input/output format:
+#   All feature identifiers are canonical IDs of the form "<source_id>/<name>".
+#   Dependency data is read exclusively from the Feature Index (feature_index.ps1).
+#   Resolver does NOT read feature.yaml or any other file directly.
 # -----------------------------------------------------------------------------
 
 Set-StrictMode -Version Latest
@@ -21,14 +26,6 @@ if (-not (Get-Command Canonical-Id-Normalize -ErrorAction SilentlyContinue)) {
     . "$env:DOTFILES_ROOT\core\lib\source_registry.ps1"
 }
 
-function _Resolver-GetFeatureDir {
-    param([Parameter(Mandatory=$true)] [string]$Feature)
-
-    $parts = Canonical-Id-Parse $Feature
-    $featureRoot = Source-Registry-GetFeatureDir -SourceId $parts.SourceId
-    return Join-Path $featureRoot $parts.Name
-}
-
 # Global variables for dependency graph
 $script:FeatureDeps = @{}
 $script:Visited = @{}
@@ -39,88 +36,51 @@ $script:Sorted = @()
 $script:Provides = @{}   # capability -> [features that provide it]
 $script:Requires = @{}   # feature    -> [capabilities required]
 
-# Read-FeatureMetadata <Features>
-# Read dependency metadata from feature.yaml files for all features.
-# Populates FeatureDeps, Provides, and Requires module-globals.
+# Read-FeatureMetadata <FeatureIndexJson> <Features>
+# Populate resolver globals from the Feature Index JSON.
+# Reads dep fields exclusively from the Feature Index — no file I/O.
+#
+# Populates:
+#   FeatureDeps – canonical depends per feature
+#   Provides    – capability -> canonical features that provide it
+#   Requires    – canonical feature -> required capabilities
 function Read-FeatureMetadata {
     param(
-        [Parameter(Mandatory=$true)]
-        [string[]]$Features
+        [Parameter(Mandatory=$true)] [string]$FeatureIndexJson,
+        [Parameter(Mandatory=$true)] [string[]]$Features
     )
 
     $script:FeatureDeps = @{}
     $script:Provides    = @{}
     $script:Requires    = @{}
 
-    if (-not (Source-Registry-Load)) {
-        return $false
-    }
+    $index = $FeatureIndexJson | ConvertFrom-Json
 
     Log-Info "Reading feature metadata..."
 
     foreach ($feature in $Features) {
-        $parts = Canonical-Id-Parse $feature
-        $featName = $parts.Name
-        $sourceId = $parts.SourceId
-
-        if (-not (Source-Registry-IsAllowed -SourceId $sourceId -FeatureName $featName)) {
-            Log-Error "Read-FeatureMetadata: feature is not allowed by source registry: $feature"
+        $prop = $index.features.PSObject.Properties[$feature]
+        if ($null -eq $prop) {
+            Log-Error "Read-FeatureMetadata: feature not found in index: $feature"
             return $false
         }
-
-        $featureDir = _Resolver-GetFeatureDir -Feature $feature
-        $metaFile = Join-Path $featureDir "feature.yaml"
-
-        # Resolve platform-specific feature file
-        $platformMetaFile = $null
-        $platformFile = Join-Path $featureDir "feature.$($global:DOTFILES_PLATFORM).yaml"
-        # WSL also falls back to feature.linux.yaml
-        $linuxFile = Join-Path $featureDir "feature.linux.yaml"
-        if ($global:DOTFILES_PLATFORM -eq "wsl") {
-            $wslFile = Join-Path $featureDir "feature.wsl.yaml"
-            if (Test-Path $wslFile)   { $platformMetaFile = $wslFile }
-            elseif (Test-Path $linuxFile) { $platformMetaFile = $linuxFile }
-        } elseif (Test-Path $platformFile) {
-            $platformMetaFile = $platformFile
-        }
-
-        if (-not (Test-Path $metaFile)) {
-            Log-Error "feature.yaml not found: $metaFile"
-            return $false
-        }
+        $entry = $prop.Value
 
         try {
-            # ── Helper: read a yq list field from a file ──────────────────────
-            $readYqList = {
-                param($file, $expr)
-                if (-not (Test-Path $file)) { return @() }
-                $raw = & yq eval $expr $file 2>$null
-                if ($LASTEXITCODE -ne 0 -or -not $raw) { return @() }
-                return @($raw -split "`n" | Where-Object { $_ -and $_ -ne "null" })
-            }
-
             # ── depends ───────────────────────────────────────────────────────
-            $deps  = & $readYqList $metaFile '.depends[]'
-            if ($platformMetaFile) {
-                $deps += & $readYqList $platformMetaFile '.depends[]'
+            $depArr = @()
+            if ($entry.dep.depends) {
+                $depArr = @($entry.dep.depends | Where-Object { $_ -and $_ -ne 'null' })
             }
-            $uniqueDeps = @($deps | Select-Object -Unique | Where-Object { $_ } |
-                ForEach-Object {
-                    $canonicalDep = Canonical-Id-Normalize -Name $_ -DefaultSourceId $sourceId
-                    $depParts = Canonical-Id-Parse $canonicalDep
-                    if (-not (Source-Registry-IsAllowed -SourceId $depParts.SourceId -FeatureName $depParts.Name)) {
-                        throw "dependency is not allowed by source registry: $canonicalDep"
-                    }
-                    $canonicalDep
-                })
-            $script:FeatureDeps[$feature] = $uniqueDeps
+            $script:FeatureDeps[$feature] = $depArr
 
             # ── provides ──────────────────────────────────────────────────────
-            $caps = & $readYqList $metaFile '.provides[].name'
-            if ($platformMetaFile) {
-                $caps += & $readYqList $platformMetaFile '.provides[].name'
+            $provCaps = @()
+            if ($entry.dep.provides) {
+                $provCaps = @($entry.dep.provides | ForEach-Object { $_.name } |
+                             Where-Object { $_ -and $_ -ne 'null' })
             }
-            foreach ($cap in ($caps | Select-Object -Unique | Where-Object { $_ })) {
+            foreach ($cap in $provCaps) {
                 if (-not $script:Provides.ContainsKey($cap)) {
                     $script:Provides[$cap] = @()
                 }
@@ -128,23 +88,24 @@ function Read-FeatureMetadata {
             }
 
             # ── requires ──────────────────────────────────────────────────────
-            $reqs = & $readYqList $metaFile '.requires[].name'
-            if ($platformMetaFile) {
-                $reqs += & $readYqList $platformMetaFile '.requires[].name'
+            $reqArr = @()
+            if ($entry.dep.requires) {
+                $reqArr = @($entry.dep.requires | ForEach-Object { $_.name } |
+                            Where-Object { $_ -and $_ -ne 'null' })
             }
-            $script:Requires[$feature] = @($reqs | Select-Object -Unique | Where-Object { $_ })
+            $script:Requires[$feature] = $reqArr
 
             # ── log ───────────────────────────────────────────────────────────
-            if ($uniqueDeps.Count -gt 0) {
-                Log-Info "  $feature depends on: $($uniqueDeps -join ', ')"
+            if ($depArr.Count -gt 0) {
+                Log-Info "  $feature depends on: $($depArr -join ', ')"
             }
-            if ($caps.Count -gt 0) {
-                Log-Info "  $feature provides: $($caps -join ', ')"
+            if ($provCaps.Count -gt 0) {
+                Log-Info "  $feature provides: $($provCaps -join ', ')"
             }
-            if ($script:Requires[$feature].Count -gt 0) {
-                Log-Info "  $feature requires capabilities: $($script:Requires[$feature] -join ', ')"
+            if ($reqArr.Count -gt 0) {
+                Log-Info "  $feature requires capabilities: $($reqArr -join ', ')"
             }
-            if ($uniqueDeps.Count -eq 0 -and $caps.Count -eq 0 -and $script:Requires[$feature].Count -eq 0) {
+            if ($depArr.Count -eq 0 -and $provCaps.Count -eq 0 -and $reqArr.Count -eq 0) {
                 Log-Info "  $feature has no dependencies"
             }
         } catch {

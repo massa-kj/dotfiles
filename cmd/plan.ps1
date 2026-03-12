@@ -34,6 +34,9 @@ $global:DOTFILES_ROOT = (Get-Item "$ScriptRoot\..").FullName
 . "$global:DOTFILES_ROOT\core\lib\logger.ps1"
 . "$global:DOTFILES_ROOT\core\lib\state.ps1"
 . "$global:DOTFILES_ROOT\core\lib\runner.ps1"
+. "$global:DOTFILES_ROOT\core\lib\source_registry.ps1"
+. "$global:DOTFILES_ROOT\core\lib\feature_index.ps1"
+. "$global:DOTFILES_ROOT\core\lib\compiler.ps1"
 . "$global:DOTFILES_ROOT\core\lib\resolver.ps1"
 . "$global:DOTFILES_ROOT\core\lib\orchestrator.ps1"
 
@@ -183,12 +186,16 @@ if (-not (State-Init)) {
 $desiredFeatures = Read-Profile -ProfileFile $ProfileFile
 if ($null -eq $desiredFeatures) { exit 1 }
 
-# Filter features by supported spec_version
-$_svResult = Invoke-ValidateSpecVersions -Features $desiredFeatures
+# Build Feature Index: scans all registered sources, enriches with metadata
+$_planIndex = Invoke-FeatureIndexBuild
+if ($null -eq $_planIndex) { exit 1 }
+
+# Filter desired features: separates valid from spec_version-blocked
+$_svResult = Invoke-FeatureIndexFilter -FeatureIndexJson $_planIndex -DesiredFeatures $desiredFeatures
 if ($null -eq $_svResult) { exit 1 }
 
-# Resolve feature metadata + topological sort (only valid features)
-if (-not (Read-FeatureMetadata -Features $_svResult.Valid)) { exit 1 }
+# Resolve feature metadata from index (no file I/O) + topological sort
+if (-not (Read-FeatureMetadata -FeatureIndexJson $_planIndex -Features $_svResult.Valid)) { exit 1 }
 
 $sortedFeatures = Resolve-Dependencies -DesiredFeatures $_svResult.Valid
 if ($null -eq $sortedFeatures) { exit 1 }

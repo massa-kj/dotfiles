@@ -23,6 +23,16 @@ $ErrorActionPreference = "Stop"
 
 # This library expects env.ps1, logger.ps1, and state.ps1 to be loaded by the caller.
 
+# Lazily source feature_index if not already loaded
+if (-not (Get-Command Invoke-FeatureIndexBuild -ErrorAction SilentlyContinue)) {
+    . "$env:DOTFILES_ROOT\core\lib\feature_index.ps1"
+}
+
+# Lazily source compiler if not already loaded
+if (-not (Get-Command Invoke-FeatureCompilerRun -ErrorAction SilentlyContinue)) {
+    . "$env:DOTFILES_ROOT\core\lib\compiler.ps1"
+}
+
 # Lazily source resolver if not already loaded
 if (-not (Get-Command Read-FeatureMetadata -ErrorAction SilentlyContinue)) {
     . "$env:DOTFILES_ROOT\core\lib\resolver.ps1"
@@ -305,56 +315,6 @@ function Show-Summary {
 
 # ── Spec version validation ───────────────────────────────────────────────────
 
-# Invoke-ValidateSpecVersions <Features>
-# Check spec_version for each feature. Features with spec_version >
-# SUPPORTED_FEATURE_SPEC_VERSION are excluded from the valid list and recorded
-# in BlockedJson as a JSON array string.
-# Returns PSCustomObject { Valid: string[]; BlockedJson: string }, or $null on error.
-function Invoke-ValidateSpecVersions {
-    param([Parameter(Mandatory=$true)] [string[]]$Features)
-
-    $valid   = [System.Collections.Generic.List[string]]::new()
-    $blocked = @()
-    $maxVer  = if ($global:SUPPORTED_FEATURE_SPEC_VERSION) { [int]$global:SUPPORTED_FEATURE_SPEC_VERSION } else { 1 }
-
-    foreach ($feature in $Features) {
-        $parts       = Canonical-Id-Parse $feature
-        $featureRoot = Source-Registry-GetFeatureDir -SourceId $parts.SourceId
-        $featureDir  = Join-Path $featureRoot $parts.Name
-        $featureYaml = Join-Path $featureDir "feature.yaml"
-
-        if (-not (Test-Path $featureYaml)) {
-            Log-Error "Invoke-ValidateSpecVersions: feature.yaml not found: $featureYaml"
-            return $null
-        }
-
-        $raw         = & yq eval '.spec_version // 1' $featureYaml 2>$null
-        $specVersion = if ($raw -match '^\d+$') { [int]$raw } else { 1 }
-
-        if ($specVersion -gt $maxVer) {
-            Log-Warn "Blocked: $feature has unsupported spec_version $specVersion (max: $maxVer)"
-            $blocked += [PSCustomObject]@{
-                feature = $feature
-                reason  = "unsupported spec_version: $specVersion (max: $maxVer)"
-            }
-        } else {
-            $valid.Add($feature)
-        }
-    }
-
-    $blockedJson = if ($blocked.Count -eq 0) {
-        "[]"
-    } else {
-        $arr = $blocked | ConvertTo-Json -Compress -Depth 5
-        if ($blocked.Count -eq 1) { "[$arr]" } else { $arr }
-    }
-
-    return [PSCustomObject]@{
-        Valid       = $valid.ToArray()
-        BlockedJson = $blockedJson
-    }
-}
-
 # Invoke-PlanInjectBlocked <PlanJson> <BlockedExtraJson>
 # Inject additional pre-blocked features into plan JSON. Returns updated JSON string.
 function Invoke-PlanInjectBlocked {
@@ -404,15 +364,23 @@ function Invoke-OrchestratorApply {
     $desiredFeatures = Read-Profile -ProfileFile $ProfileFile
     if ($null -eq $desiredFeatures) { exit 1 }
 
-    # Filter features by supported spec_version
-    $svResult = Invoke-ValidateSpecVersions -Features $desiredFeatures
+    # Build Feature Index: scans all registered sources, enriches with metadata
+    $featureIndex = Invoke-FeatureIndexBuild
+    if ($null -eq $featureIndex) { exit 1 }
+
+    # Filter desired features: separates valid from spec_version-blocked
+    $svResult = Invoke-FeatureIndexFilter -FeatureIndexJson $featureIndex -DesiredFeatures $desiredFeatures
     if ($null -eq $svResult) { exit 1 }
 
-    # Resolve feature metadata + topological sort (only valid features)
-    if (-not (Read-FeatureMetadata -Features $svResult.Valid)) { exit 1 }
+    # Resolve feature metadata from index (no file I/O) + topological sort
+    if (-not (Read-FeatureMetadata -FeatureIndexJson $featureIndex -Features $svResult.Valid)) { exit 1 }
 
     $sortedFeatures = Resolve-Dependencies -DesiredFeatures $svResult.Valid
     if ($null -eq $sortedFeatures) { exit 1 }
+
+    # Compile DesiredResourceGraph (used by planner in Phase 3)
+    $drg = Invoke-FeatureCompilerRun -FeatureIndexJson $featureIndex -SortedFeatures $sortedFeatures
+    if ($null -eq $drg) { exit 1 }
 
     # Plan: pure computation of what needs to happen
     $planJson = Invoke-PlannerRun -ProfileFile $ProfileFile -SortedFeatures $sortedFeatures
