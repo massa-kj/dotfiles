@@ -33,8 +33,8 @@ Must NOT: contain logic, OS branching, commands, or install details.
 
 Coordinate execution flow.
 
-`plan`: load → resolve → plan → display. Must NOT modify state.
-`apply`: load → resolve → plan → execute → commit state.
+`plan`: load → resolve → compile → plan → display. Must NOT modify state.
+`apply`: load → resolve → compile → plan → execute → commit state.
 
 Must NOT: perform package management directly, re-classify after planner has decided.
 
@@ -77,13 +77,17 @@ See `specs/data/state.md` for the full contract.
 ```
 Profile + Policy + State + Sources
     ↓
-  Source Registry  (pure lookup — canonical ID → source paths / allow-list)
+  Source Registry       (pure lookup — canonical ID → source paths / allow-list)
     ↓
-  Resolver  (pure — builds feature DAG, topological sort)
+  Feature Index Builder (discovery, parse, spec_version validation → Feature Index)
     ↓
-  Planner   (pure — diff + classify + decide → Plan)
+  Resolver              (pure — dep fields only → ResolvedFeatureOrder)
     ↓
-  Executor  (impure — executes actions, commits state)
+  FeatureCompiler       (pure — Feature Index + Policy → DesiredResourceGraph)
+    ↓
+  Planner               (pure — diff + classify + decide → Plan)
+    ↓
+  Executor              (impure — executes actions, commits state)
     ↓
   State
 ```
@@ -92,6 +96,8 @@ Planner is pure: same inputs always produce the same Plan.
 Executor is impure: calls feature scripts and backend plugins, commits state atomically.
 State is both input (current reality) and output (recorded effects).
 Source registry data influences lookup and admission only; it must not introduce hidden fallback or side effects.
+Resolver reads only `dep` fields from the Feature Index; it must not read `resources` fields.
+FeatureCompiler applies policy to resolve `desired_backend` for each resource; the result is embedded in DesiredResourceGraph.
 
 ## Repository Structure
 

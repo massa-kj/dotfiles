@@ -19,6 +19,8 @@ Target modules:
 * `core/lib/state` — schema validation, invariants, atomic commit
 * `core/lib/resolver` — topological sort, cycle detection, capability injection
 * `core/lib/source_registry` — canonical ID parsing, source path resolution, allow-list checks
+* `core/lib/compiler` — DRG output format, platform override, absence of `desired_backend` in raw DRG
+* `core/lib/declarative_executor` — resource routing by kind, all plan operations
 
 Internal APIs must NOT be tested directly.
 Tests must validate behavior, not implementation details.

@@ -13,6 +13,8 @@ what invariants must hold. They do not explain rationale or implementation detai
 * `data/policy.md` — Policy schema and backend resolution rules
 * `data/state.md` — State schema, invariants, and commit rules
 * `data/sources.md` — Source registry schema and allow-list rules
+* `data/feature_index.md` — Feature Index schema (dep fields + spec; input to Resolver and FeatureCompiler)
+* `data/desired_resource_graph.md` — DesiredResourceGraph schema (FeatureCompiler output; input to Planner)
 
 **API specs** — Interface contracts for pluggable components.
 

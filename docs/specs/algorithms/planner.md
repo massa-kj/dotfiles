@@ -24,12 +24,15 @@ Executor must NOT: decide actions, re-classify, override plan decisions.
 
 Planner operates only on:
 
-1. `profile` — desired state
+1. `desired_resource_graph` — compiled desired resources, grouped by feature (produced by FeatureCompiler)
 2. `state` — current authoritative state
-3. `policy` — backend resolution strategy
+3. `resolved_feature_order` — topologically sorted feature identifiers from resolver
 
-Feature identifiers in `profile`, `state`, and planner output are canonical IDs of the form
+Feature identifiers in `desired_resource_graph`, `state`, and planner output are canonical IDs of the form
 `<source_id>/<name>`. Planner does not normalize bare names; normalization happens before planner input construction.
+
+Planner must NOT receive `profile` or `policy` directly.
+Backend resolution (`desired_backend` per resource) must be completed by FeatureCompiler before planning.
 
 Planner must NOT depend on current time, environment randomness, or live backend results.
 Planner must NOT call backend observation API.
@@ -42,9 +45,9 @@ not by the planner itself, and does not affect classification decisions.
 Diff → Classification → Decision
 ```
 
-**Diff** — structural comparison of profile vs state.
-Determines: features added, removed, changed (version/resource mismatch).
-Must not consider policy.
+**Diff** — structural comparison of `desired_resource_graph` vs `state`.
+Determines: features added, removed, changed (resource set mismatch, backend mismatch).
+Planner never reads policy; `desired_backend` is already embedded in `desired_resource_graph`.
 
 **Classification** — converts diff into normalized cases.
 Each feature is classified into exactly one of:
@@ -52,13 +55,20 @@ Each feature is classified into exactly one of:
 
 | Class | Condition |
 |---|---|
-| `create` | In profile, not in state |
-| `destroy` | In state, not in profile |
-| `replace` | In both, version mismatch |
-| `replace_backend` | In both, backend mismatch |
-| `strengthen` | In both, state has fewer resources than desired |
-| `noop` | In both, matches desired exactly |
-| `blocked` | Unknown resource kind or invariant violation in state |
+| `create` | In desired, not in state |
+| `destroy` | In state, not in desired |
+| `replace` | In both; any desired resource is incompatible with recorded state resource (kind change, fs path/entry_type/op change, or destructive semantics change) |
+| `replace_backend` | In both; backend mismatch on any existing resource |
+| `strengthen` | In both; all conditions below are satisfied: (1) every resource id recorded in state exists in desired, (2) every shared resource is compatible, (3) desired contains at least one resource id not present in state, (4) no backend mismatch, version mismatch, or blocked condition applies |
+| `noop` | In both; desired resources and state resources are identical and all compatible |
+| `blocked` | Unknown resource kind (`kind` not in supported set) or invariant violation recorded in state |
+
+Compatibility rules for shared resources:
+* `package`: name and backend must match; version difference → `replace`
+* `runtime`: name, version, and backend must match; any difference → `replace`
+* `fs`: `path`, `entry_type`, and `op` must all match; any difference → `replace`
+
+When in doubt between `strengthen` and `replace`, classify as `replace`.
 
 **Decision** — maps classification to ordered action list using the decision table.
 Must not call backends, modify state, or inspect filesystem.
@@ -68,11 +78,23 @@ Must not call backends, modify state, or inspect filesystem.
 | Current State | Desired State | Action |
 |---|---|---|
 | ∅ | managed | `create` |
-| managed(v1) | managed(v2) | `replace` |
 | managed | ∅ | `destroy` |
-| managed(A) | managed(B) | `replace_backend` |
+| managed(v1) | managed(v2, incompatible) | `replace` |
+| managed(A) | managed(B, backend differs) | `replace_backend` |
+| managed(subset) | managed(superset, compatible) | `strengthen` |
+| managed | managed (identical) | `noop` |
+| managed | managed (blocked kind) | `blocked` |
 
 Table must be deterministic, total (every classification maps to an action), and explicit (no hidden fallbacks).
+
+`strengthen` action details must include `add_resources` — the list of resources to install:
+
+```json
+{ "feature": "core/git", "operation": "strengthen",
+  "details": { "add_resources": [ { "kind": "fs", "id": "fs:gitconfig" } ] } }
+```
+
+The executor reads `details.add_resources` to determine what to install without re-reading `desired_resource_graph` directly.
 
 ## Plan Data Model
 
@@ -80,11 +102,12 @@ Table must be deterministic, total (every classification maps to an action), and
 {
   "actions": [
     { "feature": "core/git", "operation": "create" },
-    { "feature": "core/node", "operation": "replace", "details": { "from_version": "18", "to_version": "20" } }
+    { "feature": "core/node", "operation": "replace", "details": { "from_version": "18", "to_version": "20" } },
+    { "feature": "core/git", "operation": "strengthen", "details": { "add_resources": [ { "kind": "fs", "id": "fs:gitconfig" } ] } }
   ],
   "noops": [ { "feature": "core/bash" } ],
   "blocked": [ { "feature": "user/legacy", "reason": "unknown resource kind: registry" } ],
-  "summary": { "create": 1, "replace": 1, "destroy": 0, "blocked": 1 }
+  "summary": { "create": 1, "replace": 1, "strengthen": 1, "destroy": 0, "blocked": 1 }
 }
 ```
 
@@ -115,5 +138,5 @@ Apply must not re-run classification inside the executor.
 
 ## Determinism Guarantee
 
-Given identical profile, state, policy, and feature metadata:
+Given identical `desired_resource_graph`, `state`, `resolved_feature_order`, and `inventory`:
 the planner must produce an identical plan. No randomness permitted.

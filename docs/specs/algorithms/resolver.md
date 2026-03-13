@@ -12,41 +12,39 @@ Not covered: execution, state mutations, planner decision logic.
 
 The resolver receives:
 
+* `feature_index` — parsed Feature Index produced by Feature Index Builder
 * `desired_features` — list of canonical feature identifiers from the resolved profile
 
 All resolver inputs must already be normalized to canonical IDs of the form `<source_id>/<name>`.
 Bare names are normalized upstream to `core/<name>` before resolver execution.
 
+The resolver reads only `dep` fields from the Feature Index:
+`depends`, `provides`, and `requires`.
+
+The resolver must NOT read `resources` fields. Resource definitions are the exclusive domain of FeatureCompiler.
+The resolver must NOT scan the filesystem directly for feature metadata.
+
 ## Metadata Sources
 
-For each feature, the resolver determines the source-specific feature directory via the source registry.
+Feature metadata is supplied via the Feature Index. The resolver does not read files directly.
 
-Feature root resolution:
+For reference, the Feature Index Builder reads the following files from each feature directory
+(determined via source registry):
 
-* `core/<name>` → `{repo}/features/<name>`
-* `user/<name>` → config home `features/<name>`
-* `<external>/<name>` → data home `sources/<external>/features/<name>`
-
-Within that feature directory, the resolver reads:
-
-1. `meta.yaml` — base metadata (always present)
-2. `meta.<platform>.yaml` — platform-specific overrides (merged if present)
+1. `feature.yaml` — base metadata (always present)
+2. `feature.<platform>.yaml` — platform-specific overrides (merged if present)
 
 Platform resolution order:
 
-* WSL: `meta.wsl.yaml` → `meta.linux.yaml` → none
-* Linux: `meta.linux.yaml` → none
-* Windows: `meta.windows.yaml` → none
+* WSL: `feature.wsl.yaml` → `feature.linux.yaml` → none
+* Linux: `feature.linux.yaml` → none
+* Windows: `feature.windows.yaml` → none
 
-Fields read from metadata:
+Fields exposed in the Feature Index that the resolver may read (dep fields only):
 
-* `depends[]` — list of explicit feature identifiers
-* `provides[].name` — capability names this feature exposes
-* `requires[].name` — capability names this feature depends on
-
-External and `user` features are subject to source allow-list validation.
-If the feature itself or any declared explicit dependency is not allowed by the source registry,
-resolution must abort.
+* `dep.depends[]` — list of explicit feature identifiers
+* `dep.provides[].name` — capability names this feature exposes
+* `dep.requires[].name` — capability names this feature depends on
 
 ## Dependency Model
 
@@ -58,7 +56,7 @@ depends:
   - git
 ```
 
-Normalization rules for `depends`:
+Normalization rules for `dep.depends`:
 
 * bare name `git` in `core/neovim` → `core/git`
 * bare name `helper` in `user/myfeat` → `user/helper`
@@ -77,17 +75,21 @@ requires:
   - name: package_manager
 ```
 
-The resolver finds all features in the desired set that declare the matching `provides` entry,
+The resolver finds all features in the desired set that declare the matching `dep.provides` entry,
 and injects them as implicit ordering dependencies of the requiring feature.
 
 ## Graph Construction
 
-1. Read metadata for all desired features from their source-specific directories.
-2. Normalize `depends` entries to canonical IDs and build explicit dependency edges.
-3. For each feature with `requires`, find matching `provides` among desired features.
+1. Read dep fields from the Feature Index for all desired features.
+2. Normalize `dep.depends` entries to canonical IDs and build explicit dependency edges.
+3. For each feature with `dep.requires`, find matching `dep.provides` among desired features.
    Inject found providers as implicit `depends` edges.
 4. If a required capability has no provider in the desired set, abort with an error.
 5. If an explicit dependency is not present in the desired set, abort with an error.
+
+Source allow-list validation: External and `user` features are subject to source allow-list validation.
+If the feature itself or any declared explicit dependency is not allowed by the source registry,
+resolution must abort.
 
 ## Cycle Detection
 
@@ -98,9 +100,9 @@ Cycles are forbidden. The dependency graph must be a DAG.
 
 ## Output Contract
 
-The resolver outputs a topologically sorted list of canonical feature identifiers.
+The resolver outputs a `ResolvedFeatureOrder`: a topologically sorted list of canonical feature identifiers.
 
 * Install order: dependencies appear before dependents.
 * Uninstall order: reverse of install order (managed by planner/executor).
-* If a dependency declared in `depends` is not present in the desired set, execution aborts.
-* Resolver output is deterministic for the same canonical input set and metadata.
+* If a dependency declared in `dep.depends` is not present in the desired set, execution aborts.
+* Resolver output is deterministic for the same canonical input set and Feature Index.

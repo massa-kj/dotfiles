@@ -24,8 +24,8 @@ If behavior is needed in core, it belongs in core.
 
 ```
 features/<name>/
-├── meta.yaml
-├── meta.<platform>.yaml   # optional: linux, wsl, windows
+├── feature.yaml
+├── feature.<platform>.yaml   # optional: linux, wsl, windows
 ├── install.sh / install.ps1
 ├── uninstall.sh / uninstall.ps1
 └── files/                 # configuration files, if any
@@ -39,9 +39,11 @@ The same layout is used for all source roots:
 * user: config home `features/<name>/`
 * external: data home `sources/<source_id>/features/<name>/`
 
-## meta.yaml
+## feature.yaml
 
 ```yaml
+spec_version: 1
+mode: script       # script | declarative (default: declarative; script is danger)
 description: Brief description
 depends:
   - git                    # explicit feature dependency
@@ -52,11 +54,17 @@ provides:
   - name: package_manager  # capability this feature exposes
 ```
 
-`depends` and `requires`/`provides` are for **ordering only**.
+`spec_version` is required. Must be `1` for the current schema. FeatureCompiler aborts if absent or unknown.
+
+`mode` determines how the feature is executed:
+* `declarative` — resources are compiled by FeatureCompiler from the `resources:` section and applied by the executor without scripts. **This is the default.** Prefer declarative unless scripts are unavoidable.
+* `script` — run `install.sh` / `uninstall.sh`. Must be declared explicitly. Use only when install logic cannot be expressed as resources.
+
+The `dep` block (`depends`, `requires`, `provides`) is for **ordering only**.
 No version constraints, no conditional logic, no commands.
 
-For platform-specific deps, use `meta.linux.yaml` / `meta.wsl.yaml` / `meta.windows.yaml`.
-These are merged with `meta.yaml` during resolution.
+For platform-specific deps, use `feature.linux.yaml` / `feature.wsl.yaml` / `feature.windows.yaml`.
+These are merged with `feature.yaml` during Feature Index Builder execution.
 
 `depends` normalization rules:
 
@@ -77,22 +85,131 @@ These are merged with `meta.yaml` during resolution.
 `depends` — explicit feature-to-feature ordering. Use for concrete named dependencies.
 
 `requires` / `provides` — capability-based ordering. Use when any provider suffices.
-The resolver finds all profiles features that `provides` the capability and injects them
+The resolver finds all profile features that `provides` the capability and injects them
 as implicit dependencies. If no provider is in the profile, apply aborts.
 
-## Install Rules
+> **Note:** `depends`, `requires`, `provides` are top-level keys in `feature.yaml`.
+> The Feature Index Builder normalizes these into the `dep.*` structure used internally
+> by the resolver. Developers write the flat form shown above.
 
-The install script must:
+## Declarative Features
+
+A declarative feature uses `mode: declarative` and declares all its resources in the `resources:` list.
+No `install.sh` / `uninstall.sh` scripts are needed — the executor handles all operations automatically.
+
+**When to use declarative mode:**
+
+- Only installing packages/runtimes/files
+- Resources map directly to backend packages
+- Feature is easy to describe as a list
+- You want plan-level accuracy (noop detection, replace)
+
+### Declarative feature.yaml example
+
+```yaml
+spec_version: 1
+mode: declarative
+description: Install git and deploy gitconfig
+depends:
+  - bash
+
+resources:
+  - kind: package
+    id: package:git
+    name: git
+
+  - kind: fs
+    id: fs:gitconfig
+    source: files/.gitconfig
+    path: ~/.gitconfig
+    entry_type: file
+    op: link
+```
+
+### Resource kinds
+
+#### `package`
+
+Installs a package via the resolved backend.
+
+```yaml
+- kind: package
+  id: package:ripgrep     # stable identifier; must not change
+  name: ripgrep           # name as known to the backend (brew, apt, scoop, etc.)
+```
+
+#### `runtime`
+
+Installs a runtime via the resolved backend (e.g. mise).
+
+```yaml
+- kind: runtime
+  id: runtime:node
+  name: node
+  version: "22.0.0"       # exact version or constraint
+```
+
+#### `fs`
+
+Deploys a file or directory from the feature's `files/` directory.
+
+```yaml
+- kind: fs
+  id: fs:gitconfig        # stable identifier
+  source: files/.gitconfig  # relative to feature directory (optional; defaults to files/<basename(path)>)
+  path: ~/.gitconfig      # absolute or ~-relative target path
+  entry_type: file        # file | dir
+  op: link                # link (symlink/junction) | copy
+```
+
+`source` is optional. If omitted, the executor looks for `files/<basename(path)>`.  
+For example, if `path: ~/.gitconfig` and `source` is omitted, the executor uses `files/.gitconfig`.
+
+**Note:** The deployed `path` is recorded in state, but the `source` path is not stored.
+If the source file changes, currently, the planner cannot detect it. Use `dotfiles apply` with `--replace` to force redeployment.
+See `docs/specs/data/state.md` Known Limitations.
+
+### Platform-specific resources
+
+Use `feature.linux.yaml` / `feature.windows.yaml` to provide a platform-specific `resources:` list.
+When a non-empty `resources:` list is present in the platform file, it completely replaces the base list
+(not merged). This allows full override for features that need fundamentally different packages per platform.
+
+```yaml
+# feature.linux.yaml
+resources:
+  - kind: package
+    id: package:fd
+    name: fd-find          # apt name differs from brew name
+```
+
+## Script Feature Constraints
+
+Script features (`mode: script`) execute arbitrary shell code. To preserve system safety they are subject
+to strict constraints.
+
+The install script MUST:
 * Install packages/runtimes via the abstraction layer (not by calling `brew`, `apt`, etc. directly)
 * Place configuration files using `link_file` / `copy_file` abstractions
 * Exit non-zero on failure
 
-The install script must NOT:
+The install script MUST NOT:
 * Write to state directly (`state.json`)
 * Perform dependency resolution
 * Detect platform manually
+* Access files outside the feature directory and the target home/config paths
+* Read or write files of other features
 
 State is written by the executor after install completes.
+
+### When to use script mode
+
+`mode: script` must be declared **explicitly** and is treated as a danger zone — it executes
+arbitrary shell code with elevated trust. Use it only when:
+
+* Custom setup logic is required that cannot be expressed as resources
+* Conditional install steps are needed
+* The feature manages side effects not expressible in resource kinds
 
 ## Uninstall Rules
 
