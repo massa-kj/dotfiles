@@ -129,6 +129,15 @@ _feature_index_parse_entry() {
         local resources_json
         resources_json=$(yq eval -o=json '.resources // []' "$feature_yaml" 2>/dev/null)
         [[ -z "$resources_json" || "$resources_json" == "null" ]] && resources_json="[]"
+        # Platform override replaces base resources if non-empty
+        if [[ -n "$platform_yaml" ]]; then
+            local plat_res
+            plat_res=$(yq eval -o=json '.resources // []' "$platform_yaml" 2>/dev/null)
+            [[ -z "$plat_res" || "$plat_res" == "null" ]] && plat_res="[]"
+            if [[ "$plat_res" != "[]" ]]; then
+                resources_json="$plat_res"
+            fi
+        fi
         spec_json=$(printf '{"resources": %s}' "$resources_json")
     fi
 

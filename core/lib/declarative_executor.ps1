@@ -44,7 +44,7 @@ function _DE-SpecResources {
 
     # Platform override replaces base when it declares a non-empty resources list
     if (-not [string]::IsNullOrWhiteSpace($platformMeta) -and (Test-Path $platformMeta)) {
-        $platJson = & yq eval -o=json '.resources // empty' $platformMeta 2>$null
+        $platJson = & yq eval -o=json '.resources // []' $platformMeta 2>$null
         if (-not [string]::IsNullOrWhiteSpace($platJson) -and
             $platJson -ne "null" -and $platJson -ne "[]") {
             return @($platJson | ConvertFrom-Json)

@@ -115,9 +115,10 @@ function _FeatureIndex-ParseEntry {
         } else { @() }
 
         if ($platformYaml) {
+            # Platform override replaces base resources if non-empty
             $platResJson = & yq eval -o=json '.resources // []' $platformYaml 2>$null
-            if ($platResJson -and $platResJson -ne "null") {
-                $resources = @($resources) + @($platResJson | ConvertFrom-Json)
+            if ($platResJson -and $platResJson -ne "null" -and $platResJson -ne "[]") {
+                $resources = @($platResJson | ConvertFrom-Json)
             }
         }
         $spec = [ordered]@{ resources = $resources }

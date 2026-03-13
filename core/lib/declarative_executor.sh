@@ -49,8 +49,9 @@ _de_spec_resources() {
     # Platform override replaces base if it declares a non-empty resources list
     if [[ -n "$platform_meta" ]]; then
         local plat_res
-        plat_res=$(yq eval -o=json '.resources // empty' "$platform_meta" 2>/dev/null)
-        if [[ -n "$plat_res" && "$plat_res" != "null" && "$plat_res" != "[]" ]]; then
+        plat_res=$(yq eval -o=json '.resources // []' "$platform_meta" 2>/dev/null)
+        [[ -z "$plat_res" || "$plat_res" == "null" ]] && plat_res="[]"
+        if [[ "$plat_res" != "[]" ]]; then
             echo "$plat_res"
             return 0
         fi
