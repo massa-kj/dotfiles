@@ -46,16 +46,16 @@ if (-not (Get-Command Invoke-DeclarativeExecutorRun -ErrorAction SilentlyContinu
 # ── Meta helpers ──────────────────────────────────────────────────────────────
 
 # _Executor-GetFeatureMode <Feature>
-# Read .mode from feature.yaml. Returns "declarative" or "script" (default).
+# Read .mode from feature.yaml. Returns "declarative" or "script".
 function _Executor-GetFeatureMode {
     param([Parameter(Mandatory = $true)] [string]$Feature)
 
     try {
         $metaFile = _Executor-ResolveFeature -Feature $Feature
-        $mode = & yq eval '.mode // "script"' $metaFile 2>$null
+        $mode = & yq eval '.mode // "declarative"' $metaFile 2>$null
         if (-not [string]::IsNullOrWhiteSpace($mode)) { return $mode.Trim() }
     } catch {}
-    return "script"
+    return "declarative"
 }
 
 function _Executor-GetFeatureDir {

@@ -57,8 +57,8 @@ function _FeatureIndex-ParseEntry {
     $rawSv = & yq eval '.spec_version // 1' $FeatureYaml 2>$null
     $specVersion = if ($rawSv -match '^\d+$') { [int]$rawSv } else { 1 }
 
-    $mode        = & yq eval '.mode // "script"' $FeatureYaml 2>$null
-    if (-not $mode -or $mode -eq "null") { $mode = "script" }
+    $mode        = & yq eval '.mode // "declarative"' $FeatureYaml 2>$null
+    if (-not $mode -or $mode -eq "null") { $mode = "declarative" }
 
     $description = & yq eval '.description // ""' $FeatureYaml 2>$null
     if (-not $description -or $description -eq "null") { $description = "" }

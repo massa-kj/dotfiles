@@ -55,7 +55,7 @@ _feature_index_parse_entry() {
     # ── spec_version, mode, description ─────────────────────────────────────
     local spec_version mode description
     spec_version=$(yq eval '.spec_version // 1' "$feature_yaml" 2>/dev/null)
-    mode=$(yq eval '.mode // "script"' "$feature_yaml" 2>/dev/null)
+    mode=$(yq eval '.mode // "declarative"' "$feature_yaml" 2>/dev/null)
     description=$(yq eval '.description // ""' "$feature_yaml" 2>/dev/null)
     [[ "$description" == "null" ]] && description=""
 

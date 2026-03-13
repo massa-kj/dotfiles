@@ -108,16 +108,16 @@ _executor_resolve_platform_feature_file() {
 
 # _executor_feature_mode <feature>
 # Return the mode of a feature by reading feature.yaml.
-# Returns "script" if the file is not found or mode is not declared.
+# Returns "declarative" if the file is not found or mode is not declared.
 _executor_feature_mode() {
     local feature="$1"
     local feature_dir
-    feature_dir=$(_executor_feature_dir "$feature") 2>/dev/null || { echo "script"; return 0; }
+    feature_dir=$(_executor_feature_dir "$feature") 2>/dev/null || { echo "declarative"; return 0; }
     local ffile="$feature_dir/feature.yaml"
-    [[ ! -f "$ffile" ]] && { echo "script"; return 0; }
+    [[ ! -f "$ffile" ]] && { echo "declarative"; return 0; }
     local mode
-    mode=$(yq eval '.mode // "script"' "$ffile" 2>/dev/null)
-    echo "${mode:-script}"
+    mode=$(yq eval '.mode // "declarative"' "$ffile" 2>/dev/null)
+    echo "${mode:-declarative}"
 }
 
 # _executor_get_pkgs_from_meta <feature_file>
