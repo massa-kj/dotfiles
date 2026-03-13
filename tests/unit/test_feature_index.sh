@@ -92,6 +92,50 @@ EOF
 # nofile — a directory without feature.yaml (should be skipped)
 mkdir -p "$TMPDIR_FEATURES/nofile"
 
+# decl_base — declarative feature with resources only in base feature.yaml
+mkdir -p "$TMPDIR_FEATURES/decl_base"
+cat > "$TMPDIR_FEATURES/decl_base/feature.yaml" <<'EOF'
+spec_version: 1
+mode: declarative
+description: declarative, base resources only
+resources:
+  - kind: package
+    id: pkg:base-tool
+    name: base-tool
+EOF
+
+# decl_plat — declarative feature with platform override (feature.linux.yaml replaces base)
+mkdir -p "$TMPDIR_FEATURES/decl_plat"
+cat > "$TMPDIR_FEATURES/decl_plat/feature.yaml" <<'EOF'
+spec_version: 1
+mode: declarative
+description: declarative, platform override
+resources:
+  - kind: package
+    id: pkg:base-tool
+    name: base-tool
+EOF
+cat > "$TMPDIR_FEATURES/decl_plat/feature.linux.yaml" <<'EOF'
+resources:
+  - kind: package
+    id: pkg:linux-tool
+    name: linux-tool
+EOF
+
+# decl_empty_base — declarative feature with no base resources, platform provides them
+mkdir -p "$TMPDIR_FEATURES/decl_empty_base"
+cat > "$TMPDIR_FEATURES/decl_empty_base/feature.yaml" <<'EOF'
+spec_version: 1
+mode: declarative
+description: declarative, no base resources
+EOF
+cat > "$TMPDIR_FEATURES/decl_empty_base/feature.linux.yaml" <<'EOF'
+resources:
+  - kind: package
+    id: pkg:linux-only
+    name: linux-only
+EOF
+
 # ── Tests: feature_index_build ────────────────────────────────────────────────
 
 echo "feature_index_build: schema_version field"
@@ -169,6 +213,28 @@ _assert_eq "withcap provides my_cap" "my_cap" "$provides_name"
 requires_name=$(printf '%s' "$cap_entry" | jq -r '.dep.requires[0].name // "null"')
 _assert_eq "withcap requires other_cap" "other_cap" "$requires_name"
 
+# ── Tests: declarative feature spec.resources ─────────────────────────────────
+
+echo "feature_index_build: declarative feature — base resources"
+
+decl_base_entry=$(printf '%s' "$_fi_index" | jq -r '.features["core/decl_base"] // "null"')
+decl_base_res=$(printf '%s' "$decl_base_entry" | jq -r '.spec.resources[0].name // "null"')
+_assert_eq "decl_base spec.resources[0].name is base-tool" "base-tool" "$decl_base_res"
+
+echo "feature_index_build: declarative feature — platform override replaces base"
+
+decl_plat_entry=$(printf '%s' "$_fi_index" | jq -r '.features["core/decl_plat"] // "null"')
+decl_plat_count=$(printf '%s' "$decl_plat_entry" | jq -r '.spec.resources | length')
+decl_plat_name=$(printf '%s' "$decl_plat_entry" | jq -r '.spec.resources[0].name // "null"')
+_assert_eq "decl_plat has exactly 1 resource (platform replaces, not appends)" "1" "$decl_plat_count"
+_assert_eq "decl_plat spec.resources[0].name is linux-tool (platform override)" "linux-tool" "$decl_plat_name"
+
+echo "feature_index_build: declarative feature — empty base, platform provides resources"
+
+decl_empty_entry=$(printf '%s' "$_fi_index" | jq -r '.features["core/decl_empty_base"] // "null"')
+decl_empty_name=$(printf '%s' "$decl_empty_entry" | jq -r '.spec.resources[0].name // "null"')
+_assert_eq "decl_empty_base spec.resources[0].name is linux-only" "linux-only" "$decl_empty_name"
+
 # ── Tests: feature_index_filter ───────────────────────────────────────────────
 
 echo "feature_index_filter: separates valid from blocked"
@@ -217,7 +283,7 @@ _assert_eq "real core/git is in index" "script" \
     "$(printf '%s' "$git_entry" | jq -r '.mode // "null"')"
 
 bash_entry=$(printf '%s' "$_fi_real" | jq -r '.features["core/bash"] // "null"')
-_assert_eq "real core/bash is in index" "script" \
+_assert_eq "real core/bash is in index" "declarative" \
     "$(printf '%s' "$bash_entry" | jq -r '.mode // "null"')"
 
 # Verify core/git and core/bash are not blocked

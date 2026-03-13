@@ -2,10 +2,12 @@ features:
   bash: {}
   brew: {}
   cli-tools: {}
+  fzf: {}
   git: {}
   git-tools: {}
   mise: {}
   neovim: {}
+  ripgrep: {}
   tmux: {}
 
   lua: {}

@@ -1,7 +1,19 @@
 spec_version: 1
-mode: script
 description: Terminal multiplexer with custom configuration
 depends: []
 
 requires:
   - name: package_manager
+
+resources:
+
+  - kind: package
+    id: pkg:tmux
+    name: tmux
+
+  - kind: fs
+    id: fs:tmux-config
+    source: files/.tmux.conf
+    path: ~/.tmux.conf
+    entry_type: file
+    op: link

@@ -4,3 +4,8 @@ depends: []
 
 requires:
   - name: package_manager
+
+resources:
+  - kind: package
+    id: pkg:fzf
+    name: fzf
