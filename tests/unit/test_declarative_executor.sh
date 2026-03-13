@@ -19,6 +19,23 @@
 #
 # Run directly: bash tests/unit/test_declarative_executor.sh
 # Exit code 0 = all pass, 1 = one or more failures.
+# 
+# 
+# Cover all plan operations across all resource kinds:
+# 
+# | Operation | Resources |
+# |---|---|
+# | `create` | package, runtime, fs (link), fs (copy), fs (source fallback) |
+# | `destroy` | removes state resources, removes feature from state |
+# | `replace` | two-phase destroy + create |
+# | `replace_backend` | same as replace |
+# | `strengthen` | installs only `add_resources` list; leaves other resources untouched |
+# | `strengthen` (empty) | noop — no install calls, no state patch |
+# 
+# Tests must use stubs for `backend_call` / `Backend-Call`, `state_patch_*` / `State-Patch*`,
+# and `_executor_remove_resources` / `_Executor-RemoveResources`.
+# Tests must NOT call real backends or write real state.
+# 
 # -----------------------------------------------------------------------------
 
 set -euo pipefail

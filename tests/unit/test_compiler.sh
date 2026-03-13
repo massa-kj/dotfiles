@@ -9,6 +9,14 @@
 #
 # Run directly: bash tests/unit/test_compiler.sh
 # Exit code 0 = all pass, 1 = one or more failures.
+# 
+# 
+# Cover:
+# * package resource compiles without `desired_backend` (raw DRG output)
+# * runtime resource compiles without `desired_backend`
+# * `fs` resource has no `desired_backend`
+# * Platform override replaces base resources when non-empty
+# 
 # -----------------------------------------------------------------------------
 
 set -euo pipefail

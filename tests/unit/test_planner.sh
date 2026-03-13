@@ -13,6 +13,18 @@
 #
 # Run directly: bash tests/unit/test_planner.sh
 # Exit code 0 = all pass, 1 = one or more failures.
+# 
+# 
+# Cover all classification cases in the decision table:
+# 
+# * `create` — feature not in state
+# * `destroy` — feature in state but not in profile
+# * `noop` — feature in state and spec-compatible (script mode; identical resources)
+# * `replace` — resource field mismatch (name, path, entry_type, op)
+# * `replace_backend` — `desired_backend` mismatch only
+# * `strengthen` — current state is a strict subset of spec resources, all compatible
+# * `blocked` — unsupported resource kind, missing dependency, missing capability provider
+# * Runtime version cases — profile version vs. state version
 # -----------------------------------------------------------------------------
 
 set -euo pipefail
