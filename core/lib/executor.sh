@@ -50,6 +50,11 @@ if [[ "$(type -t source_registry_get_feature_dir)" != "function" ]]; then
     source "${DOTFILES_ROOT}/core/lib/source_registry.sh"
 fi
 
+if [[ "$(type -t declarative_executor_run)" != "function" ]]; then
+    # shellcheck source=core/lib/declarative_executor.sh
+    source "${DOTFILES_ROOT}/core/lib/declarative_executor.sh"
+fi
+
 # ── Meta helpers ──────────────────────────────────────────────────────────────
 
 # _executor_feature_dir <feature>
@@ -99,6 +104,20 @@ _executor_resolve_platform_feature_file() {
         fi
     fi
     echo ""
+}
+
+# _executor_feature_mode <feature>
+# Return the mode of a feature by reading feature.yaml.
+# Returns "script" if the file is not found or mode is not declared.
+_executor_feature_mode() {
+    local feature="$1"
+    local feature_dir
+    feature_dir=$(_executor_feature_dir "$feature") 2>/dev/null || { echo "script"; return 0; }
+    local ffile="$feature_dir/feature.yaml"
+    [[ ! -f "$ffile" ]] && { echo "script"; return 0; }
+    local mode
+    mode=$(yq eval '.mode // "script"' "$ffile" 2>/dev/null)
+    echo "${mode:-script}"
 }
 
 # _executor_get_pkgs_from_meta <feature_file>
@@ -650,21 +669,45 @@ executor_run() {
 
     local action_idx
     for ((action_idx = 0; action_idx < action_count; action_idx++)); do
-        local action feature operation config_version
+        local action feature operation config_version action_details feature_mode
         action=$(echo "$plan_json" | jq --argjson i "$action_idx" '.actions[$i]')
         feature=$(echo "$action" | jq -r '.feature')
         operation=$(echo "$action" | jq -r '.operation')
         config_version=$(echo "$action" | jq -r '.details.config_version // empty')
+        action_details=$(echo "$action" | jq -c '.details // {}')
+
+        # Determine execution path: declarative features use declarative_executor_run
+        feature_mode=$(_executor_feature_mode "$feature")
 
         case "$operation" in
             destroy)
-                _executor_destroy "$feature" || return 1
+                if [[ "$feature_mode" == "declarative" ]]; then
+                    declarative_executor_run "$feature" "destroy" "$action_details" || return 1
+                else
+                    _executor_destroy "$feature" || return 1
+                fi
                 ;;
             create)
-                _executor_install "$feature" "$config_version" || return 1
+                if [[ "$feature_mode" == "declarative" ]]; then
+                    declarative_executor_run "$feature" "create" "$action_details" || return 1
+                else
+                    _executor_install "$feature" "$config_version" || return 1
+                fi
                 ;;
             replace|replace_backend)
-                _executor_replace "$feature" "$config_version" || return 1
+                if [[ "$feature_mode" == "declarative" ]]; then
+                    declarative_executor_run "$feature" "$operation" "$action_details" || return 1
+                else
+                    _executor_replace "$feature" "$config_version" || return 1
+                fi
+                ;;
+            strengthen)
+                if [[ "$feature_mode" == "declarative" ]]; then
+                    declarative_executor_run "$feature" "strengthen" "$action_details" || return 1
+                else
+                    log_error "executor: strengthen is not supported for script-mode features"
+                    return 1
+                fi
                 ;;
             *)
                 log_error "executor: unknown operation '$operation' for feature '$feature'"

@@ -39,7 +39,24 @@ if (-not (Get-Command Source-Registry-GetFeatureDir -ErrorAction SilentlyContinu
     . "$env:DOTFILES_ROOT\core\lib\source_registry.ps1"
 }
 
+if (-not (Get-Command Invoke-DeclarativeExecutorRun -ErrorAction SilentlyContinue)) {
+    . "$env:DOTFILES_ROOT\core\lib\declarative_executor.ps1"
+}
+
 # ── Meta helpers ──────────────────────────────────────────────────────────────
+
+# _Executor-GetFeatureMode <Feature>
+# Read .mode from feature.yaml. Returns "declarative" or "script" (default).
+function _Executor-GetFeatureMode {
+    param([Parameter(Mandatory = $true)] [string]$Feature)
+
+    try {
+        $metaFile = _Executor-ResolveFeature -Feature $Feature
+        $mode = & yq eval '.mode // "script"' $metaFile 2>$null
+        if (-not [string]::IsNullOrWhiteSpace($mode)) { return $mode.Trim() }
+    } catch {}
+    return "script"
+}
 
 function _Executor-GetFeatureDir {
     param([Parameter(Mandatory=$true)] [string]$Feature)
@@ -649,12 +666,47 @@ function Invoke-ExecutorRun {
             $null -ne $action.details.config_version) {
             $configVersion = [string]$action.details.config_version
         }
+        $actionDetails = if ($action.PSObject.Properties['details'] -and
+                             $null -ne $action.details) { $action.details } else { $null }
+        $featureMode   = _Executor-GetFeatureMode -Feature $feature
 
         $ok = switch ($operation) {
-            "destroy"          { _Executor-Destroy  -Feature $feature }
-            "create"           { _Executor-Install  -Feature $feature -ConfigVersion $configVersion }
-            "replace"          { _Executor-Replace  -Feature $feature -ConfigVersion $configVersion }
-            "replace_backend"  { _Executor-Replace  -Feature $feature -ConfigVersion $configVersion }
+            "destroy" {
+                if ($featureMode -eq "declarative") {
+                    Invoke-DeclarativeExecutorRun -Feature $feature -Operation "destroy" -Details $actionDetails
+                } else {
+                    _Executor-Destroy -Feature $feature
+                }
+            }
+            "create" {
+                if ($featureMode -eq "declarative") {
+                    Invoke-DeclarativeExecutorRun -Feature $feature -Operation "create" -Details $actionDetails
+                } else {
+                    _Executor-Install -Feature $feature -ConfigVersion $configVersion
+                }
+            }
+            "replace" {
+                if ($featureMode -eq "declarative") {
+                    Invoke-DeclarativeExecutorRun -Feature $feature -Operation "replace" -Details $actionDetails
+                } else {
+                    _Executor-Replace -Feature $feature -ConfigVersion $configVersion
+                }
+            }
+            "replace_backend" {
+                if ($featureMode -eq "declarative") {
+                    Invoke-DeclarativeExecutorRun -Feature $feature -Operation "replace_backend" -Details $actionDetails
+                } else {
+                    _Executor-Replace -Feature $feature -ConfigVersion $configVersion
+                }
+            }
+            "strengthen" {
+                if ($featureMode -eq "declarative") {
+                    Invoke-DeclarativeExecutorRun -Feature $feature -Operation "strengthen" -Details $actionDetails
+                } else {
+                    Log-Error "executor: 'strengthen' is not supported for script-mode features: $feature"
+                    $false
+                }
+            }
             default {
                 Log-Error "executor: unknown operation '$operation' for feature '$feature'"
                 $false
